@@ -9,32 +9,18 @@ def _get_client():
     global _client
     if _client is None:
         if not GARMIN_EMAIL or not GARMIN_PASSWORD:
-            print("[garmin] No credentials provided — using dummy data.")
+            print("[garmin] No credentials provided.")
             return None
         try:
+            print(f"[garmin] Attempting login with email: {GARMIN_EMAIL}")
             _client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             _client.login()
             print("[garmin] Logged in successfully.")
         except Exception as e:
             print(f"[garmin] Login failed: {e}")
+            print(f"[garmin] Error type: {type(e).__name__}")
             return None
     return _client
-
-def _seed_dummy_data():
-    today = datetime.now()
-    dummy = [
-        (1001, "Sprint Session", "sprint",   0.0,  45.0, 168, 520, 72, 48, (today - timedelta(days=1)).strftime("%Y-%m-%d")),
-        (1002, "Strength",       "strength", 0.0,  60.0, 135, 410, 80, 58, (today - timedelta(days=2)).strftime("%Y-%m-%d")),
-        (1003, "Sprint Session", "sprint",   0.0,  40.0, 172, 480, 65, 40, (today - timedelta(days=3)).strftime("%Y-%m-%d")),
-        (1004, "Strength",       "strength", 0.0,  60.0, 140, 430, 85, 62, (today - timedelta(days=5)).strftime("%Y-%m-%d")),
-        (1005, "Strength",       "strength", 0.0,  55.0, 130, 380, 78, 55, (today - timedelta(days=6)).strftime("%Y-%m-%d")),
-        (1006, "Sprint Session", "sprint",   0.0,  42.0, 165, 490, 70, 44, (today - timedelta(days=8)).strftime("%Y-%m-%d")),
-        (1007, "Strength",       "strength", 0.0,  60.0, 138, 400, 82, 60, (today - timedelta(days=9)).strftime("%Y-%m-%d")),
-        (1008, "Strength",       "strength", 0.0,  65.0, 142, 450, 88, 65, (today - timedelta(days=10)).strftime("%Y-%m-%d")),
-    ]
-    for row in dummy:
-        database.insert_activity(*row)
-    print("[garmin] Dummy data seeded.")
 
 def _map_activity_type(atype):
     """Map Garmin activity type to our simplified types."""
@@ -52,18 +38,27 @@ def pull_activities(days=14):
     client = _get_client()
 
     if not client:
-        _seed_dummy_data()
-        return
+        print("[garmin] No client available - not seeding dummy data automatically.")
+        print("[garmin] Run /pull command manually to see detailed errors.")
+        return 0
 
     try:
         start_date = datetime.now() - timedelta(days=days)
         end_date = datetime.now()
+
+        print(f"[garmin] Fetching activities from {start_date.date()} to {end_date.date()}")
 
         # Get activities in date range
         activities = client.get_activities_by_date(
             start_date.strftime("%Y-%m-%d"),
             end_date.strftime("%Y-%m-%d")
         )
+
+        print(f"[garmin] Found {len(activities)} raw activities from Garmin")
+
+        if not activities:
+            print("[garmin] No activities found in date range.")
+            return 0
 
         # Get body battery data if available
         try:
@@ -102,7 +97,13 @@ def pull_activities(days=14):
                 bb_end = bb_entry.get('bodyBatteryEndValue')
 
             # Map activity type
-            mapped_type = _map_activity_type(atype)
+            try:
+                mapped_type = _map_activity_type(atype)
+            except Exception as e:
+                print(f"[garmin] Error mapping activity type '{atype}': {e}")
+                import traceback
+                traceback.print_exc()
+                mapped_type = "other"  # Default fallback
 
             database.insert_activity(
                 garmin_id, name, mapped_type, distance_km, duration_min,
@@ -111,8 +112,11 @@ def pull_activities(days=14):
             count += 1
 
         print(f"[garmin] Pulled {count} activities.")
+        return count
 
     except Exception as e:
         print(f"[garmin] Error pulling activities: {e}")
-        print("[garmin] Falling back to dummy data.")
-        _seed_dummy_data()
+        print(f"[garmin] Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        return 0

@@ -155,9 +155,12 @@ async def cmd_recipient(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Recipient updated to {args[0]}.")
 
 async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Pulling Garmin data...")
-    garmin.pull_activities()
-    await update.message.reply_text("Done.")
+    await update.message.reply_text("🔄 Pulling Garmin data...")
+    count = garmin.pull_activities()
+    if count > 0:
+        await update.message.reply_text(f"✅ Pulled {count} activities from Garmin.")
+    else:
+        await update.message.reply_text("⚠️ No activities pulled. Check logs for details or verify Garmin credentials.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[main] Received message from chat_id: {update.effective_chat.id}")

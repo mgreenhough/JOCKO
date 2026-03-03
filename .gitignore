@@ -20,6 +20,7 @@ ENV/
 
 # Logs
 *.log
+*.txt
 
 # Local Garmin tokens
 ~/.garminconnect/
@@ -34,9 +35,11 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Archive folder (old backups)
+# Folders
+data/
 archive/
 
 # Config with real secrets (use config.py.example as template)
 # NOTE: config.py is NOT ignored by default so it works for you locally
 # When deploying, use environment variables instead
+config.py
