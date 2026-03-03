@@ -1,0 +1,388 @@
+from datetime import datetime, timedelta
+from openai import OpenAI
+import database
+import goals
+from config import OPENAI_API_KEY, CONVERSATION_HISTORY_LIMIT, OPENAI_MODEL
+import stoic
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+def generate_wakeup_message(intensity: int) -> str:
+    """Generate AI wake-up message with Stoic entry appended."""
+    entry = stoic.get_daily_stoic_entry()
+
+    prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+You take on the character of Jocko Willink, embodying his discipline and intensity.
+At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
+At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
+
+Generate a wake-up message. It's time to get up and start the day. Be motivating but authentic.
+Vary your phrasing naturally — never repeat the same opening twice.
+Keep it concise (2-4 sentences max).
+
+Generate the wake-up message now:"""
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    message = response.choices[0].message.content.strip()
+
+    # Append Stoic entry and WAKE_UP trigger token
+    stoic_text = f"\n\n📖 Daily Stoic: {entry['title']}\n\"{entry['quote'][:200]}...\"\n— {entry['author']}"
+    message += stoic_text
+    message += "\n\nWAKE_UP"
+
+    return message
+
+def generate_gym_checkin_message(intensity: int, session_found: bool) -> str:
+    """Generate gym check-in message based on whether session was found."""
+    if session_found:
+        prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+You take on the character of Jocko Willink, embodying his discipline and intensity.
+
+The user has completed their gym session as committed. Acknowledge this with appropriate intensity.
+At high intensity, this is approval for keeping their word. At low intensity, warm encouragement.
+Vary your phrasing. Keep it concise (1-3 sentences).
+
+Generate the acknowledgment now:"""
+    else:
+        prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+You take on the character of Jocko Willink, embodying his discipline and intensity.
+
+The user MISSED their committed gym session. No activity found in the window.
+At high intensity, this is a confrontation about broken commitment. At low intensity, concerned inquiry.
+Vary your phrasing. Keep it concise (1-3 sentences).
+
+Generate the response now:"""
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    return response.choices[0].message.content.strip()
+
+def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) -> bool:
+    """Check if a gym session exists within the window after gym_time."""
+    try:
+        # Parse gym time
+        today = datetime.now().date()
+
+        # Handle various time formats (HH:MM, H:MM AM/PM)
+        gym_time_str = gym_time_str.strip().upper()
+        if 'AM' in gym_time_str or 'PM' in gym_time_str:
+            gym_time = datetime.strptime(gym_time_str, "%I:%M %p").time()
+        elif ':' in gym_time_str:
+            gym_time = datetime.strptime(gym_time_str, "%H:%M").time()
+        else:
+            # Handle HHMM format
+            gym_time = datetime.strptime(gym_time_str, "%H%M").time()
+
+        gym_datetime = datetime.combine(today, gym_time)
+        window_end = gym_datetime + timedelta(minutes=window_minutes)
+
+        # Get today's activities
+        today_str = today.isoformat()
+        tomorrow_str = (today + timedelta(days=1)).isoformat()
+        activities = database.get_activities_between(today_str, tomorrow_str)
+
+        for activity in activities:
+            # activity: (id, name, type, start_time, duration, distance, calories, avg_hr, max_hr, bb_start, bb_end)
+            start_time_str = activity[3]
+            try:
+                activity_start = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                # Convert to local time (naive comparison)
+                if activity_start.tzinfo:
+                    activity_start = activity_start.replace(tzinfo=None)
+
+                if gym_datetime <= activity_start <= window_end:
+                    return True
+            except:
+                continue
+
+        return False
+    except Exception as e:
+        print(f"[coach] Error checking gym session: {e}")
+        return False
+
+def _get_week_start(offset=0):
+    today = datetime.now().date()
+    monday = today - timedelta(days=today.weekday()) - timedelta(weeks=offset)
+    return monday.isoformat()
+
+def _calculate_summary(week_start_str):
+    activities = database.get_activities_since(week_start_str)
+    total_distance = 0.0
+    total_time     = 0.0
+    total_calories = 0.0
+    hr_readings    = []
+    session_count  = 0
+    sprint_count   = 0
+
+    for row in activities:
+        # id(0), name(1), type(2), start_time(3), duration(4), distance(5), calories(6), avg_hr(7), max_hr(8), body_battery_start(9), body_battery_end(10)
+        _, name, activity_type, start_time, duration, distance, calories, avg_hr, _, _, _ = row
+        if start_time >= week_start_str:
+            session_count  += 1
+            total_distance += distance or 0
+            total_time     += duration or 0
+            total_calories += calories or 0
+            if avg_hr:
+                hr_readings.append(avg_hr)
+            if activity_type and "sprint" in activity_type.lower():
+                sprint_count += 1
+
+    avg_hr = round(sum(hr_readings) / len(hr_readings), 1) if hr_readings else None
+    return {
+        "session_count":  session_count,
+        "sprint_count":   sprint_count,
+        "total_distance": round(total_distance, 2),
+        "total_time":     round(total_time, 1),
+        "total_calories": round(total_calories),
+        "avg_hr":         avg_hr,
+    }
+
+def _get_hr_trend():
+    """Calculate HR trend over last 7 days vs previous 7 days."""
+    today = datetime.now().date()
+    recent_start = (today - timedelta(days=7)).isoformat()
+    recent_end = today.isoformat()
+    previous_start = (today - timedelta(days=14)).isoformat()
+    previous_end = recent_start
+
+    recent_activities = database.get_activities_between(recent_start, recent_end)
+    previous_activities = database.get_activities_between(previous_start, previous_end)
+
+    # avg_hr is at index 7 in the activities table
+    recent_hrs = [a[7] for a in recent_activities if a[7]]
+    previous_hrs = [a[7] for a in previous_activities if a[7]]
+
+    recent_avg = sum(recent_hrs) / len(recent_hrs) if recent_hrs else None
+    previous_avg = sum(previous_hrs) / len(previous_hrs) if previous_hrs else None
+
+    if recent_avg and previous_avg:
+        return round(recent_avg - previous_avg, 1), round(recent_avg, 1)
+    return None, recent_avg
+
+def _calculate_fatigue_score():
+    """
+    Calculate fatigue score based on:
+    - HR trend (elevated HR = fatigue)
+    - Session density (sessions per day over last 7 days)
+    - Body battery trend (if available)
+    Returns score 0-100 (0 = fully recovered, 100 = highly fatigued)
+    """
+    today = datetime.now().date()
+    week_ago = (today - timedelta(days=7)).isoformat()
+    two_weeks_ago = (today - timedelta(days=14)).isoformat()
+
+    # Get recent activities
+    recent_activities = database.get_activities_between(week_ago, today.isoformat())
+    previous_activities = database.get_activities_between(two_weeks_ago, week_ago)
+
+    score = 0
+    factors = []
+
+    # HR trend component (0-40 points) - avg_hr is at index 7
+    recent_hrs = [a[7] for a in recent_activities if a[7]]
+    previous_hrs = [a[7] for a in previous_activities if a[7]]
+
+    if recent_hrs and previous_hrs:
+        recent_avg = sum(recent_hrs) / len(recent_hrs)
+        previous_avg = sum(previous_hrs) / len(previous_hrs)
+        hr_diff = recent_avg - previous_avg
+
+        if hr_diff > 10:
+            score += 40
+            factors.append("significantly elevated HR")
+        elif hr_diff > 5:
+            score += 25
+            factors.append("elevated HR")
+        elif hr_diff > 2:
+            score += 10
+            factors.append("slightly elevated HR")
+        elif hr_diff < -5:
+            score -= 10
+            factors.append("lower HR (good recovery)")
+
+    # Session density component (0-35 points)
+    recent_count = len(recent_activities)
+    if recent_count >= 7:
+        score += 35
+        factors.append("high session density")
+    elif recent_count >= 5:
+        score += 20
+        factors.append("moderate session density")
+    elif recent_count >= 3:
+        score += 10
+        factors.append("light session density")
+
+    # Body battery component (0-25 points)
+    bb = database.get_latest_body_battery()
+    if bb is not None:
+        if bb < 25:
+            score += 25
+            factors.append("very low body battery")
+        elif bb < 50:
+            score += 15
+            factors.append("low body battery")
+        elif bb > 75:
+            score -= 10
+            factors.append("high body battery")
+
+    score = max(0, min(100, score))
+    return score, factors
+
+def _get_distance_trend():
+    """Calculate week-on-week distance trend as percentage."""
+    this_week = _get_week_start(0)
+    last_week = _get_week_start(1)
+
+    current = _calculate_summary(this_week)
+    previous = _calculate_summary(last_week)
+
+    if previous["total_distance"] > 0:
+        pct_change = ((current["total_distance"] - previous["total_distance"]) / previous["total_distance"]) * 100
+        return round(pct_change, 1)
+    elif current["total_distance"] > 0:
+        return 100.0
+    return 0.0
+
+def _body_battery_line():
+    bb = database.get_latest_body_battery()
+    if bb is None:
+        return None
+    if bb >= 70:
+        return f"Body battery: {bb}% — plenty in the tank."
+    elif bb >= 40:
+        return f"Body battery: {bb}% — moderate reserves, manageable."
+    else:
+        return f"Body battery: {bb}% — running low, recovery may be needed."
+
+def _fatigue_line():
+    score, factors = _calculate_fatigue_score()
+    if score >= 70:
+        return f"Fatigue: {score}/100 — HIGH. {', '.join(factors)}. Prioritize recovery."
+    elif score >= 40:
+        return f"Fatigue: {score}/100 — MODERATE. {', '.join(factors)}. Balance work and rest."
+    else:
+        return f"Fatigue: {score}/100 — LOW. {', '.join(factors) if factors else 'Good recovery state.'} Ready to push."
+
+def _trend_line():
+    distance_trend = _get_distance_trend()
+    hr_delta, recent_hr = _get_hr_trend()
+
+    lines = []
+    if distance_trend > 0:
+        lines.append(f"Distance trend: +{distance_trend}% vs last week")
+    elif distance_trend < 0:
+        lines.append(f"Distance trend: {distance_trend}% vs last week")
+    else:
+        lines.append("Distance trend: stable")
+
+    if hr_delta is not None:
+        if hr_delta > 0:
+            lines.append(f"HR trend: +{hr_delta} bpm vs last week")
+        elif hr_delta < 0:
+            lines.append(f"HR trend: {hr_delta} bpm vs last week")
+        else:
+            lines.append("HR trend: stable")
+
+    return " | ".join(lines)
+
+def generate_weekly_report():
+    this_week = _get_week_start(0)
+    last_week = _get_week_start(1)
+
+    current   = _calculate_summary(this_week)
+    previous  = _calculate_summary(last_week)
+    intensity = int(database.get_setting("intensity") or 5)
+
+    session_trend = current["session_count"] - previous["session_count"]
+    trend_str     = f"+{session_trend}" if session_trend >= 0 else str(session_trend)
+    compliance    = goals.compliance(current)
+    bb_line       = _body_battery_line()
+    fatigue_line  = _fatigue_line()
+    trend_line    = _trend_line()
+
+    prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+You take on the character of Jocko Willink, embodying his discipline and intensity.
+At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
+At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
+
+Deliver a weekly training report based on this data. Be concise. No bullet points. Speak directly to the athlete.
+Use the fatigue score and trends to guide your coaching — push harder when fatigue is low and recovery is good, 
+back off when fatigue is high. Factor in body battery and HR trends in your assessment.
+
+{compliance}
+Sessions vs last week: {trend_str}
+{trend_line}
+{fatigue_line}
+{f"{bb_line}" if bb_line else ""}
+Total time: {current['total_time']} min"""
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.choices[0].message.content.strip()
+
+def get_status():
+    this_week  = _get_week_start(0)
+    current    = _calculate_summary(this_week)
+    compliance = goals.compliance(current)
+    bb_line    = _body_battery_line()
+    fatigue_line = _fatigue_line()
+    trend_line = _trend_line()
+
+    status = f"Week starting {this_week}\n{compliance}\n{trend_line}\n{fatigue_line}"
+    if bb_line:
+        status += f"\n{bb_line}"
+    return status
+
+def check_goal_compliance():
+    this_week = _get_week_start(0)
+    current   = _calculate_summary(this_week)
+    return goals.check_compliance(current)
+
+def chat(user_message):
+    history    = database.get_recent_conversations(CONVERSATION_HISTORY_LIMIT)
+    this_week  = _get_week_start(0)
+    current    = _calculate_summary(this_week)
+    intensity  = int(database.get_setting("intensity") or 5)
+    compliance = goals.compliance(current)
+    bb_line    = _body_battery_line()
+    fatigue_line = _fatigue_line()
+    trend_line = _trend_line()
+
+    system_prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+You take on the character of Jocko Willink, embodying his discipline and intensity.
+At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
+At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
+Never break character. Vary your phrasing naturally — never repeat the same line twice.
+Use body battery and fatigue score as coaching colour — if fatigue is high or body battery is low, factor in recovery; 
+if both are good, push harder. Use trends to assess whether the athlete is improving or regressing.
+
+Current training context:
+{compliance}
+{trend_line}
+{fatigue_line}
+{f"{bb_line}" if bb_line else ""}
+Total time this week: {current['total_time']} min"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    for role, content in history:
+        messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_message})
+
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=messages
+    )
+
+    reply = response.choices[0].message.content.strip()
+    database.save_conversation("user", user_message)
+    database.save_conversation("assistant", reply)
+    return reply
