@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import re
+import subprocess
 from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -85,7 +86,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/frequency [1-10] - Set workout frequency\n"
         "/penalty [amount] - Set penalty amount\n"
         "/recipient [email] - Set penalty recipient\n"
-        "/pull - Pull latest Garmin data\n\n"
+        "/pull - Pull latest Garmin data\n"
+        "/update - Pull latest code from GitHub & restart\n\n"
         "Or just send me a message to chat!"
     )
 
@@ -162,6 +164,47 @@ async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ No activities pulled. Check logs for details or verify Garmin credentials.")
 
+
+async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Pull latest code from GitHub and restart the service."""
+    await update.message.reply_text("🔄 Updating from GitHub...")
+
+    try:
+        # Pull latest code
+        result = subprocess.run(
+            ["git", "pull", "origin", "main"],
+            cwd="/opt/coach",
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            await update.message.reply_text(f"❌ Git pull failed:\n{result.stderr}")
+            return
+
+        output = result.stdout.strip()
+        await update.message.reply_text(f"✅ Git pull complete:\n```\n{output}\n```", parse_mode="Markdown")
+
+        # Restart the service
+        restart_result = subprocess.run(
+            ["systemctl", "restart", "coach"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if restart_result.returncode != 0:
+            await update.message.reply_text(f"⚠️ Code updated but restart failed:\n{restart_result.stderr}")
+            return
+
+        await update.message.reply_text("✅ Service restarted successfully. Update complete!")
+
+    except subprocess.TimeoutExpired:
+        await update.message.reply_text("❌ Update timed out. Check server manually.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Update failed: {str(e)}")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[main] Received message from chat_id: {update.effective_chat.id}")
     user_message = update.message.text
@@ -236,6 +279,7 @@ def main():
     app.add_handler(CommandHandler("penalty",   cmd_penalty))
     app.add_handler(CommandHandler("recipient", cmd_recipient))
     app.add_handler(CommandHandler("pull",      cmd_pull))
+    app.add_handler(CommandHandler("update",    cmd_update))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("[main] Bot running...")
