@@ -30,7 +30,7 @@ Generate the wake-up message now:"""
     message = response.choices[0].message.content.strip()
 
     # Append Stoic entry and WAKE_UP trigger token
-    stoic_text = f"\n\n📖 Daily Stoic: {entry['title']}\n\"{entry['quote'][:200]}...\"\n— {entry['author']}"
+    stoic_text = f"\n\n📖 Daily Stoic: {entry['title']}\n\"{entry['quote']}\"\n— {entry['author']}"
     message += stoic_text
     message += "\n\nWAKE_UP"
 
@@ -307,14 +307,26 @@ def generate_weekly_report():
     fatigue_line  = _fatigue_line()
     trend_line    = _trend_line()
 
+    # Check if in grace period
+    is_active = database.get_setting("jocko_active") == "1"
+    penalty_start = database.get_setting("penalty_start_date")
+    in_grace_period = False
+    grace_note = ""
+    if is_active and penalty_start and this_week < penalty_start:
+        in_grace_period = True
+        grace_note = f"GRACE PERIOD: Penalties start on {penalty_start}. Use this week to establish your routine."
+    elif not is_active:
+        grace_note = "Jocko is currently DEACTIVATED. Use /activate to enable penalties."
+
     prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
 You take on the character of Jocko Willink, embodying his discipline and intensity.
 At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
 At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
 
 Deliver a weekly training report based on this data. Be concise. No bullet points. Speak directly to the athlete.
-Use the fatigue score and trends to guide your coaching — push harder when fatigue is low and recovery is good, 
+Use the fatigue score and trends to guide your coaching — push harder when fatigue is low and recovery is good,
 back off when fatigue is high. Factor in body battery and HR trends in your assessment.
+{grace_note}
 
 {compliance}
 Sessions vs last week: {trend_str}
@@ -337,9 +349,21 @@ def get_status():
     fatigue_line = _fatigue_line()
     trend_line = _trend_line()
 
+    # Check activation status
+    is_active = database.get_setting("jocko_active") == "1"
+    penalty_start = database.get_setting("penalty_start_date")
+    status_extra = ""
+    if not is_active:
+        status_extra = "\n\n🔴 Jocko is DEACTIVATED - use /activate to enable"
+    elif penalty_start and this_week < penalty_start:
+        status_extra = f"\n\n🟡 GRACE PERIOD - Penalties start {penalty_start}"
+    else:
+        status_extra = "\n\n🟢 Jocko is ACTIVE - Penalties enabled"
+
     status = f"Week starting {this_week}\n{compliance}\n{trend_line}\n{fatigue_line}"
     if bb_line:
         status += f"\n{bb_line}"
+    status += status_extra
     return status
 
 def check_goal_compliance():
@@ -357,6 +381,13 @@ def chat(user_message):
     fatigue_line = _fatigue_line()
     trend_line = _trend_line()
 
+    # Check if in grace period
+    is_active = database.get_setting("jocko_active") == "1"
+    penalty_start = database.get_setting("penalty_start_date")
+    in_grace_period = False
+    if is_active and penalty_start and this_week < penalty_start:
+        in_grace_period = True
+
     system_prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
 You take on the character of Jocko Willink, embodying his discipline and intensity.
 At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
@@ -364,6 +395,7 @@ At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins 
 Never break character. Vary your phrasing naturally — never repeat the same line twice.
 Use body battery and fatigue score as coaching colour — if fatigue is high or body battery is low, factor in recovery;
 if both are good, push harder. Use trends to assess whether the athlete is improving or regressing.
+{"This is a GRACE PERIOD week - penalties are not yet active. Use this as onboarding time to establish the routine, but still push for discipline." if in_grace_period else ""}
 
 Current training context:
 {compliance}

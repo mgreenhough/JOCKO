@@ -120,6 +120,8 @@ def init_db():
         ("frequency", "5"),
         ("penalty_amount", "50"),
         ("recipient_email", ""),
+        ("jocko_active", "1"),  # Default to active
+        ("penalty_start_date", ""),  # Empty means no delay
     ]
     for key, value in defaults:
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))

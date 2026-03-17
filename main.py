@@ -87,9 +87,45 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/penalty [amount] - Set penalty amount\n"
         "/recipient [email] - Set penalty recipient\n"
         "/pull - Pull latest Garmin data\n"
-        "/update - Pull latest code from GitHub & restart\n\n"
+        "/update - Pull latest code from GitHub & restart\n"
+        "/commands - Show all available commands\n"
+        "/activate - Activate Jocko (penalties start next week)\n"
+        "/deactivate - Deactivate Jocko\n\n"
         "Or just send me a message to chat!"
     )
+
+async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Display all available commands."""
+    commands_text = """
+📋 **Available Commands**
+
+**Information:**
+/weekly - Generate weekly training report
+/status - Check current status and progress
+/commands - Show this command list
+
+**Goal Setting:**
+/goal [key] [value] - Set goals (e.g., /goal workouts_per_week 5)
+/intensity [1-10] - Set coaching intensity (1=gentle, 10=brutal)
+/frequency [1-10] - Set check-in frequency (1=minimal, 10=constant)
+
+**Penalty Settings:**
+/penalty [amount] - Set penalty amount in AUD
+/recipient [email] - Set penalty recipient email
+
+**Data & Control:**
+/pull - Pull latest Garmin data manually
+/update - Pull latest code from GitHub & restart
+/activate - Activate Jocko (penalties start next week)
+/deactivate - Deactivate Jocko
+
+**Daily Commitments:**
+Simply message: "WAKE: 0600, GYM: 0700"
+Use "WAKE: NONE, GYM: REST" for rest days
+
+**Need help?** Just send a message to chat with Jocko!
+"""
+    await update.message.reply_text(commands_text, parse_mode="Markdown")
 
 async def cmd_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Generating your weekly report...")
@@ -205,6 +241,74 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Update failed: {str(e)}")
 
+async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Display all available commands."""
+    commands_text = """
+📋 **Available Commands**
+
+**Information:**
+/weekly - Generate weekly training report
+/status - Check current status and progress
+/commands - Show this command list
+
+**Goal Setting:**
+/goal [key] [value] - Set goals (e.g., /goal workouts_per_week 5)
+/intensity [1-10] - Set coaching intensity (1=gentle, 10=brutal)
+/frequency [1-10] - Set check-in frequency (1=minimal, 10=constant)
+
+**Penalty Settings:**
+/penalty [amount] - Set penalty amount in AUD
+/recipient [email] - Set penalty recipient email
+
+**Data & Control:**
+/pull - Pull latest Garmin data manually
+/update - Pull latest code from GitHub & restart
+/activate - Activate Jocko (penalties start next week)
+/deactivate - Deactivate Jocko
+
+**Daily Commitments:**
+Simply message: "WAKE: 0600, GYM: 0700"
+Use "WAKE: NONE, GYM: REST" for rest days
+
+**Need help?** Just send a message to chat with Jocko!
+"""
+    await update.message.reply_text(commands_text, parse_mode="Markdown")
+
+async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activate Jocko - penalties will start from next week."""
+    database.set_setting("jocko_active", "1")
+
+    # Calculate next Monday for penalty start
+    from datetime import datetime, timedelta
+    today = datetime.now().date()
+    days_until_monday = (7 - today.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7  # If today is Monday, start next Monday
+    next_monday = today + timedelta(days=days_until_monday)
+
+    database.set_setting("penalty_start_date", next_monday.isoformat())
+
+    await update.message.reply_text(
+        f"✅ **Jocko ACTIVATED**\n\n"
+        f"Penalties will be enforced starting Monday ({next_monday}).\n"
+        f"Current week is a grace period - use it to get on track!\n\n"
+        f"Send your commitments each evening:\n"
+        f"• WAKE: 0600, GYM: 0700\n"
+        f"• WAKE: NONE, GYM: REST (for rest days)",
+        parse_mode="Markdown"
+    )
+
+async def cmd_deactivate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Deactivate Jocko - no penalties will be applied."""
+    database.set_setting("jocko_active", "0")
+    database.set_setting("penalty_start_date", "")
+    await update.message.reply_text(
+        "🔴 **Jocko DEACTIVATED**\n\n"
+        "No penalties will be applied.\n"
+        "Use /activate to restart when you're ready.",
+        parse_mode="Markdown"
+    )
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[main] Received message from chat_id: {update.effective_chat.id}")
     user_message = update.message.text
@@ -244,7 +348,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if wakeup_time == "NONE" and gym_time == "REST":
                 reply += "\n\nFull rest day. Recover well."
             elif intensity >= 8:
-                reply += "\n\nNo excuses. See you at wake-up. WAKE_UP"
+                reply += "\n\nNo excuses. See you at wake-up."
             elif intensity >= 5:
                 reply += "\n\nCommitted. I'll check in then."
             else:
@@ -280,6 +384,9 @@ def main():
     app.add_handler(CommandHandler("recipient", cmd_recipient))
     app.add_handler(CommandHandler("pull",      cmd_pull))
     app.add_handler(CommandHandler("update",    cmd_update))
+    app.add_handler(CommandHandler("commands",  cmd_commands))
+    app.add_handler(CommandHandler("activate",  cmd_activate))
+    app.add_handler(CommandHandler("deactivate", cmd_deactivate))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("[main] Bot running...")

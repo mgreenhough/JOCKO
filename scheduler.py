@@ -69,6 +69,20 @@ async def scheduled_gym_checkin():
 
         gym_time = commitment[1]
 
+        # Skip if rest day
+        if gym_time.upper() in ("REST", "NONE"):
+            print("[scheduler] Gym is REST for today, skipping check-in")
+            return
+
+        # Pull latest Garmin data first to ensure we have the most recent activities
+        print("[scheduler] Pulling latest Garmin data before check-in...")
+        try:
+            import garmin
+            garmin.pull_activities()
+            print("[scheduler] Garmin data pulled successfully")
+        except Exception as pull_error:
+            print(f"[scheduler] Warning: Failed to pull Garmin data: {pull_error}")
+
         # Check if session exists in window
         session_found = coach.check_gym_session_in_window(gym_time, window_minutes=120)
 
@@ -181,10 +195,24 @@ async def check_and_apply_penalty():
     """Check goal compliance and trigger penalty if goals missed."""
     print(f"[scheduler] Checking goal compliance at {datetime.now().isoformat()}")
     try:
+        # Check if Jocko is active
+        is_active = database.get_setting("jocko_active") == "1"
+        penalty_start = database.get_setting("penalty_start_date")
+        week_start = coach._get_week_start(0)
+
+        # If not active, skip penalty
+        if not is_active:
+            print("[scheduler] Jocko is deactivated - skipping penalty check")
+            return
+
+        # If penalty_start_date is set and we're before that date, skip
+        if penalty_start and week_start < penalty_start:
+            print(f"[scheduler] Penalty period hasn't started yet (starts {penalty_start}) - skipping")
+            return
+
         # Get compliance check
         compliance = coach.check_goal_compliance()
-        week_start = coach._get_week_start(0)
-        
+
         if compliance["all_met"]:
             print("[scheduler] All goals met - no penalty applied")
             bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -291,13 +319,24 @@ def _generate_proactive_message(context_type, intensity, extra_context=None):
     }
     
     instruction = context_instructions.get(context_type, "Send a coaching message.")
-    
+
     # Build extra context string
     context_str = ""
     if extra_context:
         for key, value in extra_context.items():
             context_str += f"\n{key}: {value}"
-    
+
+    # Check grace period status
+    import coach
+    week_start = coach._get_week_start(0)
+    is_active = database.get_setting("jocko_active") == "1"
+    penalty_start = database.get_setting("penalty_start_date")
+    grace_context = ""
+    if not is_active:
+        grace_context = "\nNote: Jocko is currently deactivated. No penalties will be applied."
+    elif penalty_start and week_start < penalty_start:
+        grace_context = f"\nNote: This is a grace period week. Penalties start on {penalty_start}. Use this time to establish the routine."
+
     prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
 You take on the character of Jocko Willink, embodying his discipline and intensity.
 At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
@@ -305,8 +344,8 @@ At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins 
 
 Your task: {instruction}
 
-Important: Vary your phrasing naturally each time. 
-Speak like a real person would. Be concise but authentic.{context_str}
+Important: Vary your phrasing naturally each time.
+Speak like a real person would. Be concise but authentic.{context_str}{grace_context}
 
 Generate the message now:"""
 
@@ -368,21 +407,27 @@ async def midday_nudge():
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 7:
             return
-        
+
         # Check if session already logged today
         today = datetime.now().date().isoformat()
         tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
         todays_activities = database.get_activities_between(today, tomorrow)
-        
+
         if todays_activities:
             print("[scheduler] Midday nudge skipped - session already logged today")
             return
-        
+
+        # Check if today was a committed rest day
+        commitment = database.get_daily_commitment(today)
+        if commitment and commitment[1] and commitment[1].upper() in ("REST", "NONE"):
+            print("[scheduler] Midday nudge skipped - today was a committed rest day")
+            return
+
         print(f"[scheduler] Midday nudge at {datetime.now().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
-        
+
         message = _generate_proactive_message("midday_nudge", intensity)
-        
+
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         print("[scheduler] Midday nudge sent")
@@ -395,36 +440,53 @@ async def evening_warning():
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 4:
             return
-        
+
         # Check if session already logged today
         today = datetime.now().date().isoformat()
         tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
         todays_activities = database.get_activities_between(today, tomorrow)
-        
+
         if todays_activities:
             print("[scheduler] Evening warning skipped - session already logged today")
             return
-        
-        # Check if goal is at risk
-        compliance = coach.check_goal_compliance()
-        if compliance['all_met']:
-            print("[scheduler] Evening warning skipped - goals on track")
+
+        # Check if today was a committed rest day
+        commitment = database.get_daily_commitment(today)
+        if commitment and commitment[1] and commitment[1].upper() in ("REST", "NONE"):
+            print("[scheduler] Evening warning skipped - today was a committed rest day")
             return
-        
-        print(f"[scheduler] Evening warning at {datetime.now().isoformat()}")
-        intensity = int(database.get_setting("intensity") or 5)
-        
+
+        # Check if goal is at risk (not just unmet, but actually at risk given days remaining)
+        compliance = coach.check_goal_compliance()
         workouts_done = compliance['current']['session_count']
         workouts_goal = compliance['goals']['workouts_per_week']
-        days_left = 7 - datetime.now().date().weekday() - 1  # Days remaining in week
-        
+        days_left = 7 - datetime.now().date().weekday() - 1  # Days remaining in week (0 on Sunday)
+
+        # Calculate minimum workouts needed to stay on track
+        # If we have X days left and need Y more workouts, we need at least Y days to do them
+        workouts_needed = workouts_goal - workouts_done
+
+        # Only warn if:
+        # 1. Goals are not met AND
+        # 2. We're behind schedule (workouts_needed > days_left) OR it's the weekend and nothing done
+        is_behind = workouts_needed > days_left
+        is_weekend = datetime.now().date().weekday() >= 5  # Saturday=5, Sunday=6
+        weekend_concern = is_weekend and workouts_done < workouts_goal and workouts_done == 0
+
+        if compliance['all_met'] or (not is_behind and not weekend_concern):
+            print(f"[scheduler] Evening warning skipped - on track ({workouts_done}/{workouts_goal}, {days_left} days left)")
+            return
+
+        print(f"[scheduler] Evening warning at {datetime.now().isoformat()}")
+        intensity = int(database.get_setting("intensity") or 5)
+
         extra_context = {
             "Current progress": f"{workouts_done}/{workouts_goal} workouts",
             "Days remaining": days_left
         }
-        
+
         message = _generate_proactive_message("evening_warning", intensity, extra_context)
-        
+
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         print("[scheduler] Evening warning sent")
