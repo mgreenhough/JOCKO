@@ -7,18 +7,27 @@ import stoic
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+def _base_persona_prompt(intensity: int, extra_capabilities: str = "") -> str:
+    """Return the base persona prompt shared across all coaching interactions."""
+    return f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+You take on the character of Jocko Willink, embodying his discipline and intensity.
+At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
+At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
+Never break character. Vary your phrasing naturally.
+
+CRITICAL: Keep responses brief. Maximum 2-3 sentences. No rambling. Be punchy and direct.
+
+You are an AI coach built by your user. You run on a Python system with a SQLite database that stores activities, goals, conversations, and settings. You pull fitness data from Garmin Connect. You can send PayPal penalties when goals are missed. You have access to conversation history, body battery data, and can calculate fatigue scores and trends.{extra_capabilities}"""
+
 def generate_wakeup_message(intensity: int) -> str:
     """Generate AI wake-up message with Stoic entry appended."""
     entry = stoic.get_daily_stoic_entry()
 
-    prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
-You take on the character of Jocko Willink, embodying his discipline and intensity.
-At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
-At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
+    prompt = _base_persona_prompt(intensity) + """
 
 Generate a wake-up message. It's time to get up and start the day. Be motivating but authentic.
 Vary your phrasing naturally — never repeat the same opening twice.
-Keep it concise (2-4 sentences max).
+MAXIMUM 2 SENTENCES. Be brief and punchy.
 
 Generate the wake-up message now:"""
 
@@ -30,7 +39,7 @@ Generate the wake-up message now:"""
     message = response.choices[0].message.content.strip()
 
     # Append Stoic entry and WAKE_UP trigger token
-    stoic_text = f"\n\n📖 Daily Stoic: {entry['title']}\n\"{entry['quote']}\"\n— {entry['author']}"
+    stoic_text = f"\n\n📖 Daily Stoic: {entry['title']}\n\"{entry['quote']}\"\n— {entry['author']}\n\n💭 Reflection: {entry['reflection']}"
     message += stoic_text
     message += "\n\nWAKE_UP"
 
@@ -39,21 +48,19 @@ Generate the wake-up message now:"""
 def generate_gym_checkin_message(intensity: int, session_found: bool) -> str:
     """Generate gym check-in message based on whether session was found."""
     if session_found:
-        prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
-You take on the character of Jocko Willink, embodying his discipline and intensity.
+        prompt = _base_persona_prompt(intensity) + """
 
 The user has completed their gym session as committed. Acknowledge this with appropriate intensity.
 At high intensity, this is approval for keeping their word. At low intensity, warm encouragement.
-Vary your phrasing. Keep it concise (1-3 sentences).
+Vary your phrasing. MAXIMUM 2 SENTENCES. Be brief.
 
 Generate the acknowledgment now:"""
     else:
-        prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
-You take on the character of Jocko Willink, embodying his discipline and intensity.
+        prompt = _base_persona_prompt(intensity) + """
 
 The user MISSED their committed gym session. No activity found in the window.
 At high intensity, this is a confrontation about broken commitment. At low intensity, concerned inquiry.
-Vary your phrasing. Keep it concise (1-3 sentences).
+Vary your phrasing. MAXIMUM 2 SENTENCES. Be brief.
 
 Generate the response now:"""
 
@@ -318,12 +325,9 @@ def generate_weekly_report():
     elif not is_active:
         grace_note = "Jocko is currently DEACTIVATED. Use /activate to enable penalties."
 
-    prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
-You take on the character of Jocko Willink, embodying his discipline and intensity.
-At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
-At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
-
-Deliver a weekly training report based on this data. Be concise. No bullet points. Speak directly to the athlete.
+    prompt = _base_persona_prompt(intensity) + f"""
+Deliver a weekly training report based on this data. Be extremely concise. No bullet points. Speak directly to the athlete.
+MAXIMUM 3-4 SENTENCES. Be punchy and direct.
 Use the fatigue score and trends to guide your coaching — push harder when fatigue is low and recovery is good,
 back off when fatigue is high. Factor in body battery and HR trends in your assessment.
 {grace_note}
@@ -388,11 +392,10 @@ def chat(user_message):
     if is_active and penalty_start and this_week < penalty_start:
         in_grace_period = True
 
-    system_prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
-You take on the character of Jocko Willink, embodying his discipline and intensity.
-At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
-At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
-Never break character. Vary your phrasing naturally — never repeat the same line twice.
+    system_prompt = _base_persona_prompt(
+        intensity,
+        extra_capabilities=" You communicate via Telegram."
+    ) + f"""
 Use body battery and fatigue score as coaching colour — if fatigue is high or body battery is low, factor in recovery;
 if both are good, push harder. Use trends to assess whether the athlete is improving or regressing.
 {"This is a GRACE PERIOD week - penalties are not yet active. Use this as onboarding time to establish the routine, but still push for discipline." if in_grace_period else ""}

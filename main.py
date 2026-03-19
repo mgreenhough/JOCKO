@@ -35,8 +35,9 @@ def parse_commitment(message_text):
         return None, None
 
     # Extract WAKE time or NONE
-    wake_match = re.search(r'WAKE[:\s]*(\w+)', text, re.IGNORECASE)
-    gym_match = re.search(r'GYM[:\s]*(\w+)', text, re.IGNORECASE)
+    # Use a more flexible pattern to capture time values including colons and AM/PM
+    wake_match = re.search(r'WAKE[:\s]*(\S+(?:\s*[AP]M)?)', text, re.IGNORECASE)
+    gym_match = re.search(r'GYM[:\s]*(\S+(?:\s*[AP]M)?)', text, re.IGNORECASE)
 
     wakeup_time = None
     gym_time = None
@@ -90,7 +91,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/update - Pull latest code from GitHub & restart\n"
         "/commands - Show all available commands\n"
         "/activate - Activate Jocko (penalties start next week)\n"
-        "/deactivate - Deactivate Jocko\n\n"
+        "/deactivate - Deactivate Jocko (no penalties, still messages)\n"
+        "/dormant - Put Jocko to sleep (completely silent)\n\n"
         "Or just send me a message to chat!"
     )
 
@@ -117,7 +119,8 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /pull - Pull latest Garmin data manually
 /update - Pull latest code from GitHub & restart
 /activate - Activate Jocko (penalties start next week)
-/deactivate - Deactivate Jocko
+/deactivate - Deactivate penalties (messages still active)
+/dormant - Put Jocko to sleep (completely silent)
 
 **Daily Commitments:**
 Simply message: "WAKE: 0600, GYM: 0700"
@@ -305,9 +308,29 @@ async def cmd_deactivate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🔴 **Jocko DEACTIVATED**\n\n"
         "No penalties will be applied.\n"
+        "Jocko will still send reminders and check-ins.\n"
+        "Use /dormant to completely silence Jocko.\n"
         "Use /activate to restart when you're ready.",
         parse_mode="Markdown"
     )
+
+async def cmd_dormant(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Put Jocko in dormant mode - completely silent, no messages at all."""
+    database.set_setting("jocko_active", "0")
+    database.set_setting("jocko_dormant", "1")
+    database.set_setting("penalty_start_date", "")
+    await update.message.reply_text(
+        "😴 **Jocko is now DORMANT**\n\n"
+        "No messages, no reminders, no check-ins.\n"
+        "Complete silence until you reactivate.\n\n"
+        "Use /activate to wake Jocko up when you're ready.",
+        parse_mode="Markdown"
+    )
+
+async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activate Jocko - penalties will start from next week."""
+    database.set_setting("jocko_active", "1")
+    database.set_setting("jocko_dormant", "0")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[main] Received message from chat_id: {update.effective_chat.id}")
@@ -356,6 +379,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(reply)
             print(f"[main] Commitment saved: wake={wakeup_time}, gym={gym_time}")
+
+            # Immediately reschedule jobs to ensure wake-up alarm is set
+            # If it's after 9 PM, this schedules for tomorrow (the day after the commitment)
+            # If it's before 9 PM, this schedules for the commitment day
+            scheduler.schedule_dynamic_jobs()
+            print("[main] Dynamic jobs rescheduled after commitment")
+
             return
 
         # Not a commitment - route to coach for normal chat
@@ -379,6 +409,10 @@ def main():
     app.add_handler(CommandHandler("status",    cmd_status))
     app.add_handler(CommandHandler("goal",      cmd_goal))
     app.add_handler(CommandHandler("intensity", cmd_intensity))
+    app.add_handler(CommandHandler("activate",  cmd_activate))
+    app.add_handler(CommandHandler("deactivate", cmd_deactivate))
+    app.add_handler(CommandHandler("dormant", cmd_dormant))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("frequency", cmd_frequency))
     app.add_handler(CommandHandler("penalty",   cmd_penalty))
     app.add_handler(CommandHandler("recipient", cmd_recipient))

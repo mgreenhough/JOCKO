@@ -39,24 +39,39 @@ def _parse_time_to_datetime(time_str: str, base_date: datetime.date = None) -> d
 
 async def scheduled_wakeup():
     """Dynamic wake-up job - fires at user's committed wake-up time."""
-    print(f"[scheduler] Wake-up job firing at {datetime.now().isoformat()}")
+    print(f"[scheduler] === WAKE-UP JOB FIRING at {datetime.now().isoformat()} ===")
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping wake-up message")
+            return
+
         intensity = int(database.get_setting("intensity") or 5)
+        print(f"[scheduler] Current intensity: {intensity}")
 
         # Generate wake-up message with Stoic entry
+        print("[scheduler] Generating wake-up message...")
         message = coach.generate_wakeup_message(intensity)
+        print(f"[scheduler] Wake-up message generated, length: {len(message)}")
 
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        print("[scheduler] Wake-up message sent with WAKE_UP trigger")
+        print("[scheduler] === WAKE-UP MESSAGE SENT SUCCESSFULLY ===")
     except Exception as e:
-        print(f"[scheduler] Error in wake-up job: {e}")
+        print(f"[scheduler] === ERROR in wake-up job: {e} ===")
+        import traceback
+        traceback.print_exc()
 
 
 async def scheduled_gym_checkin():
     """Dynamic gym check-in job - fires 120 min after committed gym time."""
     print(f"[scheduler] Gym check-in job firing at {datetime.now().isoformat()}")
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping gym check-in")
+            return
+
         intensity = int(database.get_setting("intensity") or 5)
 
         # Get today's commitment
@@ -116,6 +131,7 @@ def schedule_dynamic_jobs():
             return
 
         wakeup_time, gym_time = commitment
+        print(f"[scheduler] Found commitment for {tomorrow_str}: wake={wakeup_time}, gym={gym_time}")
 
         # Schedule wake-up job (skip if NONE)
         if wakeup_time and wakeup_time.upper() != "NONE":
@@ -124,8 +140,16 @@ def schedule_dynamic_jobs():
                 # Remove existing wake-up job if present
                 try:
                     scheduler.remove_job(_wakeup_job_id)
+                    print(f"[scheduler] Removed existing wake-up job")
                 except:
                     pass
+
+                # Ensure the wake-up time is in the future
+                now = datetime.now()
+                if wakeup_dt <= now:
+                    # Wake-up time has already passed for today, schedule for next day
+                    print(f"[scheduler] Wake-up time {wakeup_dt} has passed. Scheduling for next day instead.")
+                    wakeup_dt = wakeup_dt + timedelta(days=1)
 
                 scheduler.add_job(
                     scheduled_wakeup,
@@ -135,6 +159,8 @@ def schedule_dynamic_jobs():
                     replace_existing=True
                 )
                 print(f"[scheduler] Scheduled wake-up for {wakeup_dt.isoformat()}")
+            else:
+                print(f"[scheduler] ERROR: Could not parse wake-up time '{wakeup_time}'")
         else:
             # Remove wake-up job if exists (rest day)
             try:
@@ -152,8 +178,16 @@ def schedule_dynamic_jobs():
                 # Remove existing gym check-in job if present
                 try:
                     scheduler.remove_job(_gym_checkin_job_id)
+                    print(f"[scheduler] Removed existing gym check-in job")
                 except:
                     pass
+
+                # Ensure the check-in time is in the future
+                now = datetime.now()
+                if checkin_dt <= now:
+                    # Gym time has already passed, schedule for next day
+                    print(f"[scheduler] Gym check-in time {checkin_dt} has passed. Scheduling for next day instead.")
+                    checkin_dt = checkin_dt + timedelta(days=1)
 
                 scheduler.add_job(
                     scheduled_gym_checkin,
@@ -163,6 +197,8 @@ def schedule_dynamic_jobs():
                     replace_existing=True
                 )
                 print(f"[scheduler] Scheduled gym check-in for {checkin_dt.isoformat()}")
+            else:
+                print(f"[scheduler] ERROR: Could not parse gym time '{gym_time}'")
         else:
             # Remove gym check-in job if exists (rest day)
             try:
@@ -173,6 +209,8 @@ def schedule_dynamic_jobs():
 
     except Exception as e:
         print(f"[scheduler] Error scheduling dynamic jobs: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 async def schedule_tomorrow_jobs():
@@ -358,6 +396,11 @@ Generate the message now:"""
 async def evening_commitment_prompt():
     """Evening commitment prompt - asks for wake-up and gym time. Fires daily at 8:00 PM."""
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping evening commitment prompt")
+            return
+
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 1:
             return
@@ -376,6 +419,10 @@ async def evening_commitment_prompt():
 async def morning_check_in():
     """Morning check-in message. Fires daily if frequency >= 1."""
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping morning check-in")
+            return
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 1:
             return
@@ -404,6 +451,12 @@ async def morning_check_in():
 async def midday_nudge():
     """Midday nudge if no session logged. Fires if frequency >= 7."""
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping midday nudge")
+            return
+
+        frequency = int(database.get_setting("frequency") or 5)
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 7:
             return
@@ -437,6 +490,11 @@ async def midday_nudge():
 async def evening_warning():
     """Evening warning if no session and goal at risk. Fires if frequency >= 4."""
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping evening warning")
+            return
+
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 4:
             return
@@ -493,13 +551,37 @@ async def evening_warning():
     except Exception as e:
         print(f"[scheduler] Error in evening warning: {e}")
 
+
 async def breach_alert():
     """Breach alert if goal mathematically impossible. Fires if frequency >= 4."""
     try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping breach alert")
+            return
+
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 4:
             return
-        
+
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        print("[scheduler] Evening warning sent")
+    except Exception as e:
+        print(f"[scheduler] Error in evening warning: {e}")
+
+async def breach_alert():
+    """Breach alert if goal mathematically impossible. Fires if frequency >= 4."""
+    try:
+        # Check if Jocko is dormant
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping breach alert")
+            return
+
+        frequency = int(database.get_setting("frequency") or 5)
+        if frequency < 4:
+            return
+
         # Check if goal is mathematically impossible
         compliance = coach.check_goal_compliance()
         if compliance['all_met']:
