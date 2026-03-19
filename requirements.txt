@@ -4,3 +4,4 @@ requests==2.31.0
 apscheduler==3.10.4
 garminconnect==0.2.38
 paypalrestsdk==1.13.3
+tzdata==2024.1  # IANA timezone database for Windows

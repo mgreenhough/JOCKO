@@ -11,6 +11,7 @@ import garmin
 import goals
 import scheduler
 import config
+import timezone
 from config import TELEGRAM_BOT_TOKEN
 
 logging.basicConfig(level=logging.INFO)
@@ -327,6 +328,42 @@ async def cmd_dormant(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+async def cmd_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """View or update timezone setting."""
+    args = context.args
+
+    if not args:
+        # Show current timezone
+        current_tz = database.get_setting("timezone") or config.USER_TIMEZONE
+        common_timezones = timezone.list_common_timezones()
+
+        tz_list = "\n".join([f"  • {tz}" for tz in common_timezones])
+
+        await update.message.reply_text(
+            f"🌍 **Current Timezone:** `{current_tz}`\n\n"
+            f"Timezone is automatically detected from Garmin activities.\n"
+            f"You can manually set it with: `/timezone <timezone_name>`\n\n"
+            f"Common timezones:\n{tz_list}\n\n"
+            f"Or use any IANA timezone name (e.g., `Australia/Sydney`, `America/New_York`)",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Set new timezone
+    tz_name = args[0]
+    if timezone.set_user_timezone(tz_name):
+        await update.message.reply_text(
+            f"✅ Timezone updated to `{tz_name}`.\n\n"
+            f"All scheduling will now use this timezone.",
+            parse_mode="Markdown"
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ Invalid timezone: `{tz_name}`\n\n"
+            f"Please use a valid IANA timezone name (e.g., `Australia/Sydney`, `America/New_York`)",
+            parse_mode="Markdown"
+        )
+
 async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activate Jocko - penalties will start from next week."""
     database.set_setting("jocko_active", "1")
@@ -412,6 +449,7 @@ def main():
     app.add_handler(CommandHandler("activate",  cmd_activate))
     app.add_handler(CommandHandler("deactivate", cmd_deactivate))
     app.add_handler(CommandHandler("dormant", cmd_dormant))
+    app.add_handler(CommandHandler("timezone", cmd_timezone))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("frequency", cmd_frequency))
     app.add_handler(CommandHandler("penalty",   cmd_penalty))

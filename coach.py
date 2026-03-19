@@ -4,6 +4,7 @@ import database
 import goals
 from config import OPENAI_API_KEY, CONVERSATION_HISTORY_LIMIT, OPENAI_MODEL
 import stoic
+import timezone
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -74,8 +75,9 @@ Generate the response now:"""
 def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) -> bool:
     """Check if a gym session exists within the window after gym_time."""
     try:
-        # Parse gym time
-        today = datetime.now().date()
+        # Get current time in local timezone
+        now_local = timezone.now_local()
+        today = now_local.date()
 
         # Handle various time formats (HH:MM, H:MM AM/PM)
         gym_time_str = gym_time_str.strip().upper()
@@ -87,24 +89,28 @@ def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) ->
             # Handle HHMM format
             gym_time = datetime.strptime(gym_time_str, "%H%M").time()
 
-        gym_datetime = datetime.combine(today, gym_time)
+        # Create timezone-aware datetime for gym time
+        gym_datetime = timezone.get_user_timezone().localize(datetime.combine(today, gym_time))
         window_end = gym_datetime + timedelta(minutes=window_minutes)
 
-        # Get today's activities
-        today_str = today.isoformat()
-        tomorrow_str = (today + timedelta(days=1)).isoformat()
-        activities = database.get_activities_between(today_str, tomorrow_str)
+        # Get today's activities - query using UTC times
+        today_start_utc = timezone.to_utc(datetime.combine(today, datetime.min.time()))
+        tomorrow_start_utc = timezone.to_utc(datetime.combine(today + timedelta(days=1), datetime.min.time()))
+
+        activities = database.get_activities_between(
+            today_start_utc.isoformat(),
+            tomorrow_start_utc.isoformat()
+        )
 
         for activity in activities:
             # activity: (id, name, type, start_time, duration, distance, calories, avg_hr, max_hr, bb_start, bb_end)
             start_time_str = activity[3]
             try:
-                activity_start = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
-                # Convert to local time (naive comparison)
-                if activity_start.tzinfo:
-                    activity_start = activity_start.replace(tzinfo=None)
+                # Parse UTC time and convert to local for comparison
+                activity_start_utc = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                activity_start_local = timezone.to_local(activity_start_utc)
 
-                if gym_datetime <= activity_start <= window_end:
+                if gym_datetime <= activity_start_local <= window_end:
                     return True
             except:
                 continue
@@ -115,8 +121,11 @@ def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) ->
         return False
 
 def _get_week_start(offset=0):
-    today = datetime.now().date()
+    """Get start of week (Monday) in UTC for database queries."""
+    now_local = timezone.now_local()
+    today = now_local.date()
     monday = today - timedelta(days=today.weekday()) - timedelta(weeks=offset)
+    # Return as local date string for database comparison
     return monday.isoformat()
 
 def _calculate_summary(week_start_str):

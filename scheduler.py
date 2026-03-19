@@ -7,6 +7,7 @@ import asyncio
 import coach
 import database
 import payments
+import timezone
 from config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, PAYPAL_RECIPIENT_EMAIL
 
 scheduler = None
@@ -16,10 +17,10 @@ _wakeup_job_id = "dynamic_wakeup"
 _gym_checkin_job_id = "dynamic_gym_checkin"
 
 
-def _parse_time_to_datetime(time_str: str, base_date: datetime.date = None) -> datetime:
-    """Parse time string (HH:MM or HH:MM AM/PM) to datetime."""
+def _parse_time_to_datetime(time_str: str, base_date=None):
+    """Parse time string (HH:MM or HH:MM AM/PM) to timezone-aware datetime."""
     if base_date is None:
-        base_date = datetime.now().date()
+        base_date = timezone.now_local().date()
 
     time_str = time_str.strip().upper()
 
@@ -31,7 +32,8 @@ def _parse_time_to_datetime(time_str: str, base_date: datetime.date = None) -> d
         else:
             # HHMM format
             t = datetime.strptime(time_str, "%H%M").time()
-        return datetime.combine(base_date, t)
+        # Return timezone-aware datetime in user's local timezone
+        return timezone.get_user_timezone().localize(datetime.combine(base_date, t))
     except ValueError as e:
         print(f"[scheduler] Error parsing time '{time_str}': {e}")
         return None
@@ -39,7 +41,7 @@ def _parse_time_to_datetime(time_str: str, base_date: datetime.date = None) -> d
 
 async def scheduled_wakeup():
     """Dynamic wake-up job - fires at user's committed wake-up time."""
-    print(f"[scheduler] === WAKE-UP JOB FIRING at {datetime.now().isoformat()} ===")
+    print(f"[scheduler] === WAKE-UP JOB FIRING at {timezone.now_local().isoformat()} (local) ===")
     try:
         # Check if Jocko is dormant
         if database.get_setting("jocko_dormant") == "1":
@@ -65,7 +67,7 @@ async def scheduled_wakeup():
 
 async def scheduled_gym_checkin():
     """Dynamic gym check-in job - fires 120 min after committed gym time."""
-    print(f"[scheduler] Gym check-in job firing at {datetime.now().isoformat()}")
+    print(f"[scheduler] Gym check-in job firing at {timezone.now_local().isoformat()} (local)")
     try:
         # Check if Jocko is dormant
         if database.get_setting("jocko_dormant") == "1":
@@ -74,8 +76,8 @@ async def scheduled_gym_checkin():
 
         intensity = int(database.get_setting("intensity") or 5)
 
-        # Get today's commitment
-        today_str = datetime.now().date().isoformat()
+        # Get today's commitment using local date
+        today_str = timezone.now_local().date().isoformat()
         commitment = database.get_daily_commitment(today_str)
 
         if not commitment or not commitment[1]:  # No gym time committed
@@ -121,8 +123,8 @@ def schedule_dynamic_jobs():
         return
 
     try:
-        # Get tomorrow's commitment
-        tomorrow = datetime.now().date() + timedelta(days=1)
+        # Get tomorrow's commitment using local timezone
+        tomorrow = timezone.now_local().date() + timedelta(days=1)
         tomorrow_str = tomorrow.isoformat()
         commitment = database.get_daily_commitment(tomorrow_str)
 
@@ -145,7 +147,7 @@ def schedule_dynamic_jobs():
                     pass
 
                 # Ensure the wake-up time is in the future
-                now = datetime.now()
+                now = timezone.now_local()
                 if wakeup_dt <= now:
                     # Wake-up time has already passed for today, schedule for next day
                     print(f"[scheduler] Wake-up time {wakeup_dt} has passed. Scheduling for next day instead.")
@@ -183,7 +185,7 @@ def schedule_dynamic_jobs():
                     pass
 
                 # Ensure the check-in time is in the future
-                now = datetime.now()
+                now = timezone.now_local()
                 if checkin_dt <= now:
                     # Gym time has already passed, schedule for next day
                     print(f"[scheduler] Gym check-in time {checkin_dt} has passed. Scheduling for next day instead.")
@@ -215,7 +217,7 @@ def schedule_dynamic_jobs():
 
 async def schedule_tomorrow_jobs():
     """Job that runs each evening to schedule tomorrow's wake-up and gym check-in."""
-    print(f"[scheduler] Scheduling tomorrow's jobs at {datetime.now().isoformat()}")
+    print(f"[scheduler] Scheduling tomorrow's jobs at {timezone.now_local().isoformat()}")
     schedule_dynamic_jobs()
 
 async def send_weekly_report():

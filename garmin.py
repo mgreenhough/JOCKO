@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from garminconnect import Garmin
 from config import GARMIN_EMAIL, GARMIN_PASSWORD
 import database
+import timezone
 
 _client = None
 
@@ -75,6 +76,8 @@ def pull_activities(days=14):
             bb_by_date = {}
 
         count = 0
+        last_activity = None
+        
         for a in activities:
             garmin_id    = a.get("activityId")
             name         = a.get("activityName", "Activity")
@@ -84,9 +87,21 @@ def pull_activities(days=14):
             avg_hr       = a.get("averageHR")
             calories     = a.get("calories")
 
-            # Get start date from activity startTimeLocal
-            start_time = a.get("startTimeLocal", "")
-            start_date_str = start_time[:10] if start_time else datetime.now().strftime("%Y-%m-%d")
+            # Get both time fields for timezone detection
+            start_time_local = a.get("startTimeLocal", "")
+            start_time_gmt = a.get("startTimeGMT", "")
+            
+            # Store UTC time in ISO format
+            start_time_utc = None
+            if start_time_gmt:
+                try:
+                    start_time_utc = timezone.parse_garmin_time(start_time_gmt).isoformat()
+                except Exception as e:
+                    print(f"[garmin] Error parsing GMT time: {e}")
+                    start_time_utc = start_time_gmt
+            
+            # Get date string from local time for body battery lookup
+            start_date_str = start_time_local[:10] if start_time_local else datetime.now(timezone.timezone.utc).strftime("%Y-%m-%d")
 
             # Try to get body battery for activity date
             bb_start = None
@@ -107,11 +122,25 @@ def pull_activities(days=14):
 
             database.insert_activity(
                 garmin_id, name, mapped_type, distance_km, duration_min,
-                avg_hr, calories, bb_start, bb_end, start_date_str
+                avg_hr, calories, bb_start, bb_end, start_time_utc
             )
             count += 1
+            
+            # Track last activity for timezone detection
+            if start_time_local and start_time_gmt:
+                last_activity = {
+                    'startTimeLocal': start_time_local,
+                    'startTimeGMT': start_time_gmt
+                }
 
         print(f"[garmin] Pulled {count} activities.")
+        
+        # Update timezone from the most recent activity
+        if last_activity:
+            tz_name = timezone.update_timezone_from_garmin_activity(last_activity)
+            if tz_name:
+                print(f"[garmin] Timezone updated to {tz_name}")
+        
         return count
 
     except Exception as e:

@@ -122,6 +122,7 @@ def init_db():
         ("recipient_email", ""),
         ("jocko_active", "1"),  # Default to active
         ("penalty_start_date", ""),  # Empty means no delay
+        ("timezone", ""),  # IANA timezone name, empty until detected
     ]
     for key, value in defaults:
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))
@@ -187,14 +188,15 @@ def set_goal(key, value):
     conn.commit()
     conn.close()
 
-def insert_activity(garmin_id, name, activity_type, distance_km, duration_min, avg_hr, calories, body_battery_start, body_battery_end, start_date):
+def insert_activity(garmin_id, name, activity_type, distance_km, duration_min, avg_hr, calories, body_battery_start, body_battery_end, start_time_utc):
+    """Insert activity with start_time in UTC ISO format."""
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         INSERT OR IGNORE INTO activities
         (id, name, type, distance, duration, avg_hr, calories, body_battery_start, body_battery_end, start_time)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (str(garmin_id), name, activity_type, distance_km, duration_min, avg_hr, calories, body_battery_start, body_battery_end, start_date))
+    """, (str(garmin_id), name, activity_type, distance_km, duration_min, avg_hr, calories, body_battery_start, body_battery_end, start_time_utc))
     conn.commit()
     conn.close()
 
