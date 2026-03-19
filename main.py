@@ -119,7 +119,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 **Data & Control:**
 /pull - Pull latest Garmin data manually
 /update - Pull latest code from GitHub & restart
-/activate - Activate Jocko (penalties start next week)
+/activate - Activate Jocko (penalties start next week or wake from dormant)
 /deactivate - Deactivate penalties (messages still active)
 /dormant - Put Jocko to sleep (completely silent)
 
@@ -244,39 +244,6 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Update timed out. Check server manually.")
     except Exception as e:
         await update.message.reply_text(f"❌ Update failed: {str(e)}")
-
-async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Display all available commands."""
-    commands_text = """
-📋 **Available Commands**
-
-**Information:**
-/weekly - Generate weekly training report
-/status - Check current status and progress
-/commands - Show this command list
-
-**Goal Setting:**
-/goal [key] [value] - Set goals (e.g., /goal workouts_per_week 5)
-/intensity [1-10] - Set coaching intensity (1=gentle, 10=brutal)
-/frequency [1-10] - Set check-in frequency (1=minimal, 10=constant)
-
-**Penalty Settings:**
-/penalty [amount] - Set penalty amount in AUD
-/recipient [email] - Set penalty recipient email
-
-**Data & Control:**
-/pull - Pull latest Garmin data manually
-/update - Pull latest code from GitHub & restart
-/activate - Activate Jocko (penalties start next week)
-/deactivate - Deactivate Jocko
-
-**Daily Commitments:**
-Simply message: "WAKE: 0600, GYM: 0700"
-Use "WAKE: NONE, GYM: REST" for rest days
-
-**Need help?** Just send a message to chat with Jocko!
-"""
-    await update.message.reply_text(commands_text, parse_mode="Markdown")
 
 async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activate Jocko - penalties will start from next week."""
