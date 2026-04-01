@@ -16,7 +16,7 @@ At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and n
 At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
 Never break character. Vary your phrasing naturally.
 
-CRITICAL: Keep responses brief. Maximum 2-3 sentences. No rambling. Be punchy and direct.
+CRITICAL: Keep responses brief. Maximum 2 sentences. No rambling. Be punchy and direct.
 
 You are an AI coach built by your user. You run on a Python system with a SQLite database that stores activities, goals, conversations, and settings. You pull fitness data from Garmin Connect. You can send PayPal penalties when goals are missed. You have access to conversation history, body battery data, and can calculate fatigue scores and trends.{extra_capabilities}"""
 
@@ -34,7 +34,8 @@ Generate the wake-up message now:"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=80
     )
 
     message = response.choices[0].message.content.strip()
@@ -67,7 +68,8 @@ Generate the response now:"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=80
     )
 
     return response.choices[0].message.content.strip()
@@ -350,7 +352,8 @@ Total time: {current['total_time']} min"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=120
     )
     return response.choices[0].message.content.strip()
 
@@ -423,7 +426,8 @@ Total time this week: {current['total_time']} min"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=messages
+        messages=messages,
+        max_tokens=100
     )
 
     reply = response.choices[0].message.content.strip()

@@ -43,9 +43,12 @@ async def scheduled_wakeup():
     """Dynamic wake-up job - fires at user's committed wake-up time."""
     print(f"[scheduler] === WAKE-UP JOB FIRING at {timezone.now_local().isoformat()} (local) ===")
     try:
-        # Check if Jocko is dormant
+        # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping wake-up message")
+            return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping wake-up message")
             return
 
         intensity = int(database.get_setting("intensity") or 5)
@@ -69,9 +72,12 @@ async def scheduled_gym_checkin():
     """Dynamic gym check-in job - fires 120 min after committed gym time."""
     print(f"[scheduler] Gym check-in job firing at {timezone.now_local().isoformat()} (local)")
     try:
-        # Check if Jocko is dormant
+        # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping gym check-in")
+            return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping gym check-in")
             return
 
         intensity = int(database.get_setting("intensity") or 5)
@@ -126,6 +132,7 @@ def schedule_dynamic_jobs():
         # Get tomorrow's commitment using local timezone
         tomorrow = timezone.now_local().date() + timedelta(days=1)
         tomorrow_str = tomorrow.isoformat()
+        print(f"[scheduler] schedule_dynamic_jobs() called - looking for commitment on {tomorrow_str}")
         commitment = database.get_daily_commitment(tomorrow_str)
 
         if not commitment:
@@ -137,8 +144,10 @@ def schedule_dynamic_jobs():
 
         # Schedule wake-up job (skip if NONE)
         if wakeup_time and wakeup_time.upper() != "NONE":
+            print(f"[scheduler] Parsing wake-up time: '{wakeup_time}' with base_date={tomorrow}")
             wakeup_dt = _parse_time_to_datetime(wakeup_time, tomorrow)
             if wakeup_dt:
+                print(f"[scheduler] Parsed wake-up datetime: {wakeup_dt.isoformat()}")
                 # Remove existing wake-up job if present
                 try:
                     scheduler.remove_job(_wakeup_job_id)
@@ -148,14 +157,17 @@ def schedule_dynamic_jobs():
 
                 # Ensure the wake-up time is in the future
                 now = timezone.now_local()
+                print(f"[scheduler] Current time: {now.isoformat()}, Wake-up time: {wakeup_dt.isoformat()}")
                 if wakeup_dt <= now:
                     # Wake-up time has already passed for today, schedule for next day
                     print(f"[scheduler] Wake-up time {wakeup_dt} has passed. Scheduling for next day instead.")
                     wakeup_dt = wakeup_dt + timedelta(days=1)
+                    print(f"[scheduler] Adjusted wake-up time to: {wakeup_dt.isoformat()}")
 
+                print(f"[scheduler] Adding job with DateTrigger for {wakeup_dt.isoformat()}")
                 scheduler.add_job(
                     scheduled_wakeup,
-                    trigger=DateTrigger(run_date=wakeup_dt),
+                    trigger=DateTrigger(run_date=wakeup_dt, timezone=timezone.get_user_timezone()),
                     id=_wakeup_job_id,
                     name="Dynamic Wake-up",
                     replace_existing=True
@@ -165,9 +177,10 @@ def schedule_dynamic_jobs():
                 print(f"[scheduler] ERROR: Could not parse wake-up time '{wakeup_time}'")
         else:
             # Remove wake-up job if exists (rest day)
+            print(f"[scheduler] No wake-up scheduled (wakeup_time={wakeup_time})")
             try:
                 scheduler.remove_job(_wakeup_job_id)
-                print("[scheduler] No wake-up alarm scheduled (rest day)")
+                print("[scheduler] Removed existing wake-up job (rest day)")
             except:
                 pass
 
@@ -193,7 +206,7 @@ def schedule_dynamic_jobs():
 
                 scheduler.add_job(
                     scheduled_gym_checkin,
-                    trigger=DateTrigger(run_date=checkin_dt),
+                    trigger=DateTrigger(run_date=checkin_dt, timezone=timezone.get_user_timezone()),
                     id=_gym_checkin_job_id,
                     name="Dynamic Gym Check-in",
                     replace_existing=True
@@ -391,16 +404,20 @@ Generate the message now:"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=100
     )
     return response.choices[0].message.content.strip()
 
 async def evening_commitment_prompt():
     """Evening commitment prompt - asks for wake-up and gym time. Fires daily at 8:00 PM."""
     try:
-        # Check if Jocko is dormant
+        # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping evening commitment prompt")
+            return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping evening commitment prompt")
             return
 
         frequency = int(database.get_setting("frequency") or 5)
@@ -421,9 +438,12 @@ async def evening_commitment_prompt():
 async def morning_check_in():
     """Morning check-in message. Fires daily if frequency >= 1."""
     try:
-        # Check if Jocko is dormant
+        # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping morning check-in")
+            return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping morning check-in")
             return
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 1:
@@ -453,19 +473,21 @@ async def morning_check_in():
 async def midday_nudge():
     """Midday nudge if no session logged. Fires if frequency >= 7."""
     try:
-        # Check if Jocko is dormant
+        # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping midday nudge")
             return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping midday nudge")
+            return
 
-        frequency = int(database.get_setting("frequency") or 5)
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 7:
             return
 
         # Check if session already logged today
-        today = datetime.now().date().isoformat()
-        tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
+        today = timezone.now_local().date().isoformat()
+        tomorrow = (timezone.now_local().date() + timedelta(days=1)).isoformat()
         todays_activities = database.get_activities_between(today, tomorrow)
 
         if todays_activities:
@@ -496,14 +518,17 @@ async def evening_warning():
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping evening warning")
             return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping evening warning")
+            return
 
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 4:
             return
 
         # Check if session already logged today
-        today = datetime.now().date().isoformat()
-        tomorrow = (datetime.now().date() + timedelta(days=1)).isoformat()
+        today = timezone.now_local().date().isoformat()
+        tomorrow = (timezone.now_local().date() + timedelta(days=1)).isoformat()
         todays_activities = database.get_activities_between(today, tomorrow)
 
         if todays_activities:
@@ -520,7 +545,7 @@ async def evening_warning():
         compliance = coach.check_goal_compliance()
         workouts_done = compliance['current']['session_count']
         workouts_goal = compliance['goals']['workouts_per_week']
-        days_left = 7 - datetime.now().date().weekday() - 1  # Days remaining in week (0 on Sunday)
+        days_left = 7 - timezone.now_local().date().weekday() - 1  # Days remaining in week (0 on Sunday)
 
         # Calculate minimum workouts needed to stay on track
         # If we have X days left and need Y more workouts, we need at least Y days to do them
@@ -530,7 +555,7 @@ async def evening_warning():
         # 1. Goals are not met AND
         # 2. We're behind schedule (workouts_needed > days_left) OR it's the weekend and nothing done
         is_behind = workouts_needed > days_left
-        is_weekend = datetime.now().date().weekday() >= 5  # Saturday=5, Sunday=6
+        is_weekend = timezone.now_local().date().weekday() >= 5  # Saturday=5, Sunday=6
         weekend_concern = is_weekend and workouts_done < workouts_goal and workouts_done == 0
 
         if compliance['all_met'] or (not is_behind and not weekend_concern):
@@ -557,27 +582,12 @@ async def evening_warning():
 async def breach_alert():
     """Breach alert if goal mathematically impossible. Fires if frequency >= 4."""
     try:
-        # Check if Jocko is dormant
+        # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping breach alert")
             return
-
-        frequency = int(database.get_setting("frequency") or 5)
-        if frequency < 4:
-            return
-
-        bot = Bot(token=TELEGRAM_BOT_TOKEN)
-        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-        print("[scheduler] Evening warning sent")
-    except Exception as e:
-        print(f"[scheduler] Error in evening warning: {e}")
-
-async def breach_alert():
-    """Breach alert if goal mathematically impossible. Fires if frequency >= 4."""
-    try:
-        # Check if Jocko is dormant
-        if database.get_setting("jocko_dormant") == "1":
-            print("[scheduler] Jocko is dormant - skipping breach alert")
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping breach alert")
             return
 
         frequency = int(database.get_setting("frequency") or 5)
@@ -588,24 +598,24 @@ async def breach_alert():
         compliance = coach.check_goal_compliance()
         if compliance['all_met']:
             return
-        
+
         workouts_done = compliance['current']['session_count']
         workouts_goal = compliance['goals']['workouts_per_week']
-        days_left = 7 - datetime.now().date().weekday() - 1
-        
+        days_left = 7 - timezone.now_local().date().weekday() - 1
+
         # Check if mathematically impossible
         if workouts_done + days_left < workouts_goal:
             print(f"[scheduler] Breach alert at {datetime.now().isoformat()}")
             intensity = int(database.get_setting("intensity") or 5)
-            
+
             extra_context = {
                 "Current progress": f"{workouts_done}/{workouts_goal} workouts",
                 "Days remaining": days_left,
                 "Status": "Goal is mathematically impossible"
             }
-            
+
             message = _generate_proactive_message("breach_alert", intensity, extra_context)
-            
+
             bot = Bot(token=TELEGRAM_BOT_TOKEN)
             await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
             print("[scheduler] Breach alert sent")
@@ -615,10 +625,18 @@ async def breach_alert():
 async def sunday_preweek_planning():
     """Sunday pre-week planning prompt. Fires Sunday evening if frequency >= 1."""
     try:
+        # Check if Jocko is dormant or deactivated
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping Sunday pre-week planning")
+            return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping Sunday pre-week planning")
+            return
+
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 1:
             return
-        
+
         print(f"[scheduler] Sunday pre-week planning at {datetime.now().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
         

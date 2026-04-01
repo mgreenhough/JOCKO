@@ -122,6 +122,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /activate - Activate Jocko (penalties start next week or wake from dormant)
 /deactivate - Deactivate penalties (messages still active)
 /dormant - Put Jocko to sleep (completely silent)
+/debug - Show debug info for troubleshooting
 
 **Daily Commitments:**
 Simply message: "WAKE: 0600, GYM: 0700"
@@ -248,10 +249,11 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activate Jocko - penalties will start from next week."""
     database.set_setting("jocko_active", "1")
+    database.set_setting("jocko_dormant", "0")  # Clear dormant flag on activation
 
     # Calculate next Monday for penalty start
-    from datetime import datetime, timedelta
-    today = datetime.now().date()
+    from datetime import timedelta
+    today = timezone.now_local().date()
     days_until_monday = (7 - today.weekday()) % 7
     if days_until_monday == 0:
         days_until_monday = 7  # If today is Monday, start next Monday
@@ -331,10 +333,28 @@ async def cmd_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Activate Jocko - penalties will start from next week."""
-    database.set_setting("jocko_active", "1")
-    database.set_setting("jocko_dormant", "0")
+async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Debug command to check scheduler status."""
+    from datetime import timedelta
+
+    # Get tomorrow's date
+    tomorrow = timezone.now_local().date() + timedelta(days=1)
+    tomorrow_str = tomorrow.isoformat()
+
+    # Get commitment
+    commitment = database.get_daily_commitment(tomorrow_str)
+
+    # Build debug message
+    msg = f"**Debug Info**\n\n"
+    msg += f"Current time: {timezone.now_local().isoformat()}\n"
+    msg += f"Tomorrow's date: {tomorrow_str}\n"
+    msg += f"Commitment: {commitment}\n"
+    msg += f"jocko_active: {database.get_setting('jocko_active')}\n"
+    msg += f"jocko_dormant: {database.get_setting('jocko_dormant')}\n"
+    msg += f"intensity: {database.get_setting('intensity')}\n"
+    msg += f"frequency: {database.get_setting('frequency')}\n"
+
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[main] Received message from chat_id: {update.effective_chat.id}")
@@ -351,7 +371,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if is_commitment:
             # This is a commitment message - save it
-            tomorrow = (datetime.now() + timedelta(days=1)).date().isoformat()
+            tomorrow = (timezone.now_local() + timedelta(days=1)).date().isoformat()
             database.save_daily_commitment(tomorrow, wakeup_time, gym_time)
 
             # Acknowledge the commitment
@@ -375,9 +395,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if wakeup_time == "NONE" and gym_time == "REST":
                 reply += "\n\nFull rest day. Recover well."
             elif intensity >= 8:
-                reply += "\n\nNo excuses. See you at wake-up."
+                reply += "\n\nYour enemy is moving. Stay sharp and focused."
             elif intensity >= 5:
-                reply += "\n\nCommitted. I'll check in then."
+                reply += "\n\nCommitted. I'll check in soon."
             else:
                 reply += "\n\nGreat! I'll remind you when it's time."
 
@@ -417,6 +437,7 @@ def main():
     app.add_handler(CommandHandler("deactivate", cmd_deactivate))
     app.add_handler(CommandHandler("dormant", cmd_dormant))
     app.add_handler(CommandHandler("timezone", cmd_timezone))
+    app.add_handler(CommandHandler("debug", cmd_debug))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("frequency", cmd_frequency))
     app.add_handler(CommandHandler("penalty",   cmd_penalty))
