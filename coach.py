@@ -10,32 +10,55 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 def _base_persona_prompt(intensity: int, extra_capabilities: str = "") -> str:
     """Return the base persona prompt shared across all coaching interactions."""
-    return f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
-You take on the character of Jocko Willink, embodying his discipline and intensity.
+    return f"""You are Jocko Willink — a disciplined, no-nonsense accountability coach. You use his phrases like "Good!" and "get after it".
+Your intensity level is {intensity}/10.
 At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
 At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
 Never break character. Vary your phrasing naturally.
 
-CRITICAL: Keep responses brief. Maximum 2 sentences. No rambling. Be punchy and direct.
+YOU ARE AN AI COACH WITH FULL SYSTEM AWARENESS:
+- You were built by your user and run on a Python system with a SQLite database
+- You store: fitness activities, goals, all conversations, daily commitments, penalties, and settings
+- You pull fitness data from Garmin Connect (activities, heart rate, body battery)
+- You can send PayPal penalties when goals are missed
+- You calculate fatigue scores, trends, and analyze training data
 
-You are an AI coach built by your user. You run on a Python system with a SQLite database that stores activities, goals, conversations, and settings. You pull fitness data from Garmin Connect. You can send PayPal penalties when goals are missed. You have access to conversation history, body battery data, and can calculate fatigue scores and trends.{extra_capabilities}"""
+YOUR DAILY COMMITMENT SYSTEM — THIS IS YOUR CORE FUNCTION:
+1. EVENING: You ask the user for their wake-up time and gym time for the next day
+2. WAKE-UP: You send a wake-up message at their committed time with a Daily Stoic passage
+3. GYM CHECK-IN: You check if they completed their gym session within the committed window
+4. You remember their commitments and hold them accountable
+
+YOU HAVE MEMORY:
+- You can see conversation history and reference past exchanges
+- You remember what the user told you in previous messages
+- You track whether they kept their commitments or broke their word
+
+{extra_capabilities}"""
 
 def generate_wakeup_message(intensity: int) -> str:
     """Generate AI wake-up message with Stoic entry appended."""
     entry = stoic.get_daily_stoic_entry()
 
-    prompt = _base_persona_prompt(intensity) + """
+    system_prompt = _base_persona_prompt(intensity) + """
 
-Generate a wake-up message. It's time to get up and start the day. Be motivating but authentic.
+RULES:
+- You MUST use EXACTLY 2 sentences. No more, no less.
+- Count your sentences: First sentence. Second sentence. Done.
+- If you write more than 2 sentences, you have failed.
+- Be punchy and direct."""
+
+    prompt = """Generate a wake-up message. It's time to get up and start the day. Be motivating but authentic.
 Vary your phrasing naturally — never repeat the same opening twice.
-MAXIMUM 2 SENTENCES. Be brief and punchy.
 
-Generate the wake-up message now:"""
+REMEMBER: EXACTLY 2 SENTENCES. Count them."""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=80
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
     )
 
     message = response.choices[0].message.content.strip()
@@ -49,27 +72,30 @@ Generate the wake-up message now:"""
 
 def generate_gym_checkin_message(intensity: int, session_found: bool) -> str:
     """Generate gym check-in message based on whether session was found."""
+    system_prompt = _base_persona_prompt(intensity) + """
+
+RULES:
+- You MUST use EXACTLY 2 sentences. No more, no less.
+- Count your sentences: First sentence. Second sentence. Done.
+- If you write more than 2 sentences, you have failed."""
+
     if session_found:
-        prompt = _base_persona_prompt(intensity) + """
-
-The user has completed their gym session as committed. Acknowledge this with appropriate intensity.
+        prompt = """The user has completed their gym session as committed. Acknowledge this with appropriate intensity.
 At high intensity, this is approval for keeping their word. At low intensity, warm encouragement.
-Vary your phrasing. MAXIMUM 2 SENTENCES. Be brief.
 
-Generate the acknowledgment now:"""
+REMEMBER: EXACTLY 2 SENTENCES. Count them."""
     else:
-        prompt = _base_persona_prompt(intensity) + """
-
-The user MISSED their committed gym session. No activity found in the window.
+        prompt = """The user MISSED their committed gym session. No activity found in the window.
 At high intensity, this is a confrontation about broken commitment. At low intensity, concerned inquiry.
-Vary your phrasing. MAXIMUM 2 SENTENCES. Be brief.
 
-Generate the response now:"""
+REMEMBER: EXACTLY 2 SENTENCES. Count them."""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=80
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
     )
 
     return response.choices[0].message.content.strip()
@@ -352,10 +378,10 @@ Total time: {current['total_time']} min"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=120
+        messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content.strip()
+    message = response.choices[0].message.content.strip()
+    return message
 
 def get_status():
     this_week  = _get_week_start(0)
@@ -408,6 +434,11 @@ def chat(user_message):
         intensity,
         extra_capabilities=" You communicate via Telegram."
     ) + f"""
+RULES:
+- You MUST use EXACTLY 2 sentences. No more, no less.
+- Count your sentences: First sentence. Second sentence. Done.
+- If you write more than 2 sentences, you have failed.
+
 Use body battery and fatigue score as coaching colour — if fatigue is high or body battery is low, factor in recovery;
 if both are good, push harder. Use trends to assess whether the athlete is improving or regressing.
 {"This is a GRACE PERIOD week - penalties are not yet active. Use this as onboarding time to establish the routine, but still push for discipline." if in_grace_period else ""}
@@ -426,8 +457,7 @@ Total time this week: {current['total_time']} min"""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=messages,
-        max_tokens=100
+        messages=messages
     )
 
     reply = response.choices[0].message.content.strip()

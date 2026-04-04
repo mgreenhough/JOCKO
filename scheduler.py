@@ -167,7 +167,7 @@ def schedule_dynamic_jobs():
                 print(f"[scheduler] Adding job with DateTrigger for {wakeup_dt.isoformat()}")
                 scheduler.add_job(
                     scheduled_wakeup,
-                    trigger=DateTrigger(run_date=wakeup_dt, timezone=timezone.get_user_timezone()),
+                    trigger=DateTrigger(run_date=wakeup_dt),
                     id=_wakeup_job_id,
                     name="Dynamic Wake-up",
                     replace_existing=True
@@ -206,7 +206,7 @@ def schedule_dynamic_jobs():
 
                 scheduler.add_job(
                     scheduled_gym_checkin,
-                    trigger=DateTrigger(run_date=checkin_dt, timezone=timezone.get_user_timezone()),
+                    trigger=DateTrigger(run_date=checkin_dt),
                     id=_gym_checkin_job_id,
                     name="Dynamic Gym Check-in",
                     replace_existing=True
@@ -390,24 +390,31 @@ def _generate_proactive_message(context_type, intensity, extra_context=None):
     elif penalty_start and week_start < penalty_start:
         grace_context = f"\nNote: This is a grace period week. Penalties start on {penalty_start}. Use this time to establish the routine."
 
-    prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
+    system_prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
 You take on the character of Jocko Willink, embodying his discipline and intensity.
 At intensity 1-3 you are warm, kind and encouraging. At 4-6 you are direct and no-nonsense.
 At 7-9 you are aggressive and confrontational. At 10 you are full David Goggins — brutal and relentless.
 
-Your task: {instruction}
+RULES:
+- You MUST use EXACTLY 2 sentences. No more, no less.
+- Count your sentences: First sentence. Second sentence. Done.
+- If you write more than 2 sentences, you have failed.
+- Vary your phrasing naturally each time.
+- Speak like a real person would. Be concise but authentic."""
 
-Important: Vary your phrasing naturally each time.
-Speak like a real person would. Be concise but authentic.{context_str}{grace_context}
+    user_prompt = f"""Your task: {instruction}{context_str}{grace_context}
 
-Generate the message now:"""
+REMEMBER: EXACTLY 2 SENTENCES. Count them."""
 
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=100
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
     )
-    return response.choices[0].message.content.strip()
+    message = response.choices[0].message.content.strip()
+    return message
 
 async def evening_commitment_prompt():
     """Evening commitment prompt - asks for wake-up and gym time. Fires daily at 8:00 PM."""
