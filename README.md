@@ -11,6 +11,28 @@ You are free to use it under the terms of the MIT License, but do so at your own
 
 That said, contributions, issues, and improvements are welcome. If you spot a problem or have an idea, feel free to open an issue or submit a PR — I’ll address things where time and interest permit, but no guarantees.
 
+
+## LEGAL NOTICE
+
+This repository contains copyrighted material from "The Daily Stoic" by Ryan Holiday and Stephen Hanselman.
+
+# Access Restrictions: 
+This content is intended solely for individuals who have purchased a legitimate copy of "The Daily Stoic" book. By accessing this repository, you confirm that you own a legally obtained copy of the book.
+
+Fair Use Notice: The material in this repository is provided for personal educational and reference purposes only. This falls under fair use for:
+
+Personal study and reflection
+Educational purposes
+Commentary and discussion
+Prohibited Uses:
+
+Redistribution or resale of this content
+Commercial use without authorization
+Sharing with individuals who do not own the book
+If you have not purchased "The Daily Stoic," please do not access this repository. Support the authors by purchasing the book from authorized retailers.
+
+This project is an independent tool inspired by Jocko Willink's and Ryan Holidays philosophies. It is not affiliated with, endorsed by, or associated with them personally or with their companies.
+
 ## About
 
 **Jocko** is an automated accountability system designed for people who are tired of breaking promises to themselves. Named after Jocko Willink, author of *Discipline Equals Freedom*, it operates on a simple principle: **you pre-commit to specific actions, and you pay a penalty if you fail.** The system removes ambiguity and the potential to abscond by creating concrete daily and weekly commitments, tracking them automatically (via Garmin App), assessing their veracity, and enforcing consequences if you don't show up. It also integrates the mindfulness practice of delivering a page from *The Daily Stoic - Ryan Holiday* every day.
