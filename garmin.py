@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import os
 from garminconnect import Garmin
 from config import GARMIN_EMAIL, GARMIN_PASSWORD
 import database
@@ -16,8 +17,12 @@ def _get_client():
             return None
         try:
             print(f"[garmin] Attempting login with email: {GARMIN_EMAIL}")
+            # New garminconnect 0.3.x uses mobile SSO flow
+            # Token storage location for persistent login
+            tokenstore = os.path.expanduser("~/.garminconnect")
+
             _client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-            _client.login()
+            _client.login(tokenstore)
             print("[garmin] Logged in successfully.")
             _last_error = None
         except Exception as e:
