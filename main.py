@@ -238,20 +238,24 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         output = result.stdout.strip()
         await update.message.reply_text(f"✅ Git pull complete:\n```\n{output}\n```", parse_mode="Markdown")
 
-        # Check if requirements.txt changed and install if needed
-        if "requirements.txt" in output:
-            await update.message.reply_text("📦 Requirements changed, installing dependencies...")
-            pip_result = subprocess.run(
-                ["pip", "install", "-r", "requirements.txt"],
-                cwd="/opt/coach",
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-            if pip_result.returncode != 0:
-                await update.message.reply_text(f"⚠️ pip install had issues:\n{pip_result.stderr[:500]}")
+        # Always check and install requirements to ensure dependencies are up to date
+        await update.message.reply_text("📦 Checking dependencies...")
+        pip_result = subprocess.run(
+            ["pip", "install", "-r", "requirements.txt"],
+            cwd="/opt/coach",
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+        if pip_result.returncode != 0:
+            await update.message.reply_text(f"⚠️ pip install had issues:\n{pip_result.stderr[:500]}")
+        else:
+            # Show what was installed/upgraded
+            pip_output = pip_result.stdout.strip()
+            if pip_output and ("Successfully installed" in pip_output or "Requirement already satisfied" in pip_output):
+                await update.message.reply_text("✅ Dependencies up to date.")
             else:
-                await update.message.reply_text("✅ Dependencies updated.")
+                await update.message.reply_text("✅ Dependencies checked.")
 
         # Restart the service
         restart_result = subprocess.run(
