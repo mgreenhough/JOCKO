@@ -412,7 +412,7 @@ def get_status():
     status_extra = ""
     if not is_active:
         status_extra = "\n\n🔴 Jocko is DEACTIVATED - use /activate to enable"
-    elif penalty_start and this_week < penalty_start:
+    elif penalty_start and this_week.isoformat() < penalty_start:
         status_extra = f"\n\n🟡 GRACE PERIOD - Penalties start {penalty_start}"
     else:
         status_extra = "\n\n🟢 Jocko is ACTIVE - Penalties enabled"

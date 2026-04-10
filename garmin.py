@@ -101,7 +101,7 @@ def pull_activities(days=14):
                     start_time_utc = start_time_gmt
             
             # Get date string from local time for body battery lookup
-            start_date_str = start_time_local[:10] if start_time_local else datetime.now(timezone.timezone.utc).strftime("%Y-%m-%d")
+            start_date_str = start_time_local[:10] if start_time_local else datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
 
             # Try to get body battery for activity date
             bb_start = None
