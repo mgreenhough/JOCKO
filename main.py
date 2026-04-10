@@ -238,6 +238,21 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         output = result.stdout.strip()
         await update.message.reply_text(f"✅ Git pull complete:\n```\n{output}\n```", parse_mode="Markdown")
 
+        # Check if requirements.txt changed and install if needed
+        if "requirements.txt" in output:
+            await update.message.reply_text("📦 Requirements changed, installing dependencies...")
+            pip_result = subprocess.run(
+                ["pip", "install", "-r", "requirements.txt"],
+                cwd="/opt/coach",
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            if pip_result.returncode != 0:
+                await update.message.reply_text(f"⚠️ pip install had issues:\n{pip_result.stderr[:500]}")
+            else:
+                await update.message.reply_text("✅ Dependencies updated.")
+
         # Restart the service
         restart_result = subprocess.run(
             ["systemctl", "restart", "coach"],
