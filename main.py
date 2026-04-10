@@ -241,7 +241,7 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Always check and install requirements to ensure dependencies are up to date
         await update.message.reply_text("📦 Checking dependencies...")
         pip_result = subprocess.run(
-            ["pip", "install", "-r", "requirements.txt"],
+            ["python3", "-m", "pip", "install", "-r", "requirements.txt"],
             cwd="/opt/coach",
             capture_output=True,
             text=True,
@@ -262,11 +262,20 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ["systemctl", "restart", "coach"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=30
         )
 
         if restart_result.returncode != 0:
-            await update.message.reply_text(f"⚠️ Code updated but restart failed:\n{restart_result.stderr}")
+            # Check if service is actually running despite the error
+            status_result = subprocess.run(
+                ["systemctl", "is-active", "coach"],
+                capture_output=True,
+                text=True
+            )
+            if status_result.returncode == 0:
+                await update.message.reply_text("✅ Update complete! Service is running.")
+            else:
+                await update.message.reply_text(f"⚠️ Code updated but restart may have issues:\n{restart_result.stderr}")
             return
 
         await update.message.reply_text("✅ Service restarted successfully. Update complete!")
