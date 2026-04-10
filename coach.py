@@ -149,12 +149,14 @@ def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) ->
         return False
 
 def _get_week_start(offset=0):
-    """Get start of week (Monday) in UTC for database queries."""
+    """Get start of week (Monday) in UTC ISO format for database queries."""
     now_local = timezone.now_local()
     today = now_local.date()
     monday = today - timedelta(days=today.weekday()) - timedelta(weeks=offset)
-    # Return as local date string for database comparison
-    return monday.isoformat()
+    # Convert to datetime at midnight in local timezone, then to UTC
+    monday_local = datetime.combine(monday, datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
+    monday_utc = timezone.to_utc(monday_local)
+    return monday_utc.isoformat()
 
 def _calculate_summary(week_start_str):
     activities = database.get_activities_since(week_start_str)
@@ -190,14 +192,20 @@ def _calculate_summary(week_start_str):
 
 def _get_hr_trend():
     """Calculate HR trend over last 7 days vs previous 7 days."""
-    today = datetime.now().date()
-    recent_start = (today - timedelta(days=7)).isoformat()
-    recent_end = today.isoformat()
-    previous_start = (today - timedelta(days=14)).isoformat()
-    previous_end = recent_start
+    now_local = timezone.now_local()
+    today = now_local.date()
+    recent_start_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=7), datetime.min.time()))
+    recent_end_local = timezone.get_user_timezone().localize(datetime.combine(today, datetime.min.time()))
+    previous_start_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=14), datetime.min.time()))
+    previous_end_local = recent_start_local
 
-    recent_activities = database.get_activities_between(recent_start, recent_end)
-    previous_activities = database.get_activities_between(previous_start, previous_end)
+    recent_start_utc = timezone.to_utc(recent_start_local).isoformat()
+    recent_end_utc = timezone.to_utc(recent_end_local).isoformat()
+    previous_start_utc = timezone.to_utc(previous_start_local).isoformat()
+    previous_end_utc = timezone.to_utc(previous_end_local).isoformat()
+
+    recent_activities = database.get_activities_between(recent_start_utc, recent_end_utc)
+    previous_activities = database.get_activities_between(previous_start_utc, previous_end_utc)
 
     # avg_hr is at index 7 in the activities table
     recent_hrs = [a[7] for a in recent_activities if a[7]]
@@ -218,8 +226,15 @@ def _calculate_fatigue_score():
     - Body battery trend (if available)
     Returns score 0-100 (0 = fully recovered, 100 = highly fatigued)
     """
-    today = datetime.now().date()
-    week_ago = (today - timedelta(days=7)).isoformat()
+    now_local = timezone.now_local()
+    today = now_local.date()
+    week_ago_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=7), datetime.min.time()))
+    two_weeks_ago_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=14), datetime.min.time()))
+    today_local = timezone.get_user_timezone().localize(datetime.combine(today, datetime.min.time()))
+
+    week_ago_utc = timezone.to_utc(week_ago_local).isoformat()
+    two_weeks_ago_utc = timezone.to_utc(two_weeks_ago_local).isoformat()
+    today_utc = timezone.to_utc(today_local).isoformat()
     two_weeks_ago = (today - timedelta(days=14)).isoformat()
 
     # Get recent activities

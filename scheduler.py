@@ -33,7 +33,7 @@ def _parse_time_to_datetime(time_str: str, base_date=None):
             # HHMM format
             t = datetime.strptime(time_str, "%H%M").time()
         # Return timezone-aware datetime in user's local timezone
-        return timezone.get_user_timezone().localize(datetime.combine(base_date, t))
+        return datetime.combine(base_date, t).replace(tzinfo=timezone.get_user_timezone())
     except ValueError as e:
         print(f"[scheduler] Error parsing time '{time_str}': {e}")
         return None
@@ -695,9 +695,9 @@ def start_scheduler():
         replace_existing=True
     )
 
-    # Also schedule jobs immediately on startup (in case commitments already exist)
-    schedule_dynamic_jobs()
-    
+    # Note: Dynamic jobs are scheduled after scheduler.start() to ensure
+    # jobs can be properly added to the running scheduler (see end of start_scheduler())
+
     # Midday nudge: daily at 12:00 PM (frequency >= 7)
     scheduler.add_job(
         midday_nudge,
@@ -746,6 +746,10 @@ def start_scheduler():
     scheduler.start()
     print("[scheduler] Scheduler started with Phase 7 dynamic wake-up system.")
     print("[scheduler] Jobs: Weekly report (Sun 8PM), Penalty check (Sun 11:59PM), Evening commitment (daily 8PM), Schedule tomorrow (daily 9PM), Midday nudge (daily 12PM), Evening warning (daily 6PM), Breach alert (daily 8PM), Sunday planning (Sun 7PM)")
+
+    # Schedule dynamic jobs AFTER scheduler is started
+    schedule_dynamic_jobs()
+
     return scheduler
 
 def stop_scheduler():
@@ -754,3 +758,7 @@ def stop_scheduler():
     if scheduler:
         scheduler.shutdown()
         print("[scheduler] Scheduler stopped.")
+
+def get_scheduler():
+    """Get the current scheduler instance."""
+    return scheduler

@@ -356,6 +356,45 @@ async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+async def cmd_testwake(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Test command to schedule a wake-up job 10 seconds from now."""
+    from datetime import timedelta
+    from apscheduler.triggers.date import DateTrigger
+
+    # Calculate wake-up time (now + 10 seconds)
+    now = timezone.now_local()
+    wakeup_time = now + timedelta(seconds=10)
+
+    await update.message.reply_text(
+        f"🧪 Scheduling test wake-up...\n"
+        f"Current time: {now.strftime('%H:%M:%S')}\n"
+        f"Wake-up scheduled: {wakeup_time.strftime('%H:%M:%S')}\n\n"
+        f"Stand by for wake-up message..."
+    )
+
+    try:
+        # Get the scheduler instance
+        sched = scheduler.get_scheduler()
+        if not sched:
+            await update.message.reply_text("❌ Scheduler not running!")
+            return
+
+        # Schedule the job using same method as nightly check-in
+        sched.add_job(
+            scheduler.scheduled_wakeup,
+            trigger=DateTrigger(run_date=wakeup_time),
+            id="test_wakeup",
+            name="Test Wake-up",
+            replace_existing=True
+        )
+
+        print(f"[main] Test wake-up scheduled for {wakeup_time.isoformat()}")
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error scheduling wake-up: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[main] Received message from chat_id: {update.effective_chat.id}")
     user_message = update.message.text
@@ -438,6 +477,7 @@ def main():
     app.add_handler(CommandHandler("dormant", cmd_dormant))
     app.add_handler(CommandHandler("timezone", cmd_timezone))
     app.add_handler(CommandHandler("debug", cmd_debug))
+    app.add_handler(CommandHandler("testwake", cmd_testwake))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("frequency", cmd_frequency))
     app.add_handler(CommandHandler("penalty",   cmd_penalty))
