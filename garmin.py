@@ -8,35 +8,11 @@ import timezone
 _client = None
 _last_error = None
 
-def _check_version_and_tokens():
-    """Check for version mismatch between garminconnect library and token files."""
-    tokenstore = os.path.expanduser("~/.garminconnect")
 
-    # Check for old OAuth1 token files (indicates old library version or stale tokens)
-    old_token_files = ["oauth1_token.json", "oauth2_token.json"]
-    has_old_tokens = any(os.path.exists(os.path.join(tokenstore, f)) for f in old_token_files)
-
-    # Check for new token file (garminconnect 0.3.x+)
-    has_new_tokens = os.path.exists(os.path.join(tokenstore, "garmin_tokens.json"))
-
-    if has_old_tokens and not has_new_tokens:
-        return (
-            "VERSION MISMATCH: Found old OAuth1 tokens but garminconnect 0.3.x requires new format.\n"
-            "Fix: Delete old tokens with: rm -rf ~/.garminconnect\n"
-            "Then restart the service."
-        )
-    return None
 
 def _get_client():
     global _client, _last_error
     if _client is None:
-        # Check for version mismatch first
-        version_error = _check_version_and_tokens()
-        if version_error:
-            _last_error = version_error
-            print(f"[garmin] {_last_error}")
-            return None
-
         if not GARMIN_EMAIL or not GARMIN_PASSWORD:
             _last_error = "No credentials configured"
             print(f"[garmin] {_last_error}")
@@ -44,7 +20,6 @@ def _get_client():
         try:
             print(f"[garmin] Attempting login with email: {GARMIN_EMAIL}")
             # New garminconnect 0.3.x uses mobile SSO flow
-            # Token storage location for persistent login
             tokenstore = os.path.expanduser("~/.garminconnect")
 
             # Create token directory if it doesn't exist
