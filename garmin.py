@@ -25,11 +25,13 @@ def _get_client():
             # Create token directory if it doesn't exist
             os.makedirs(tokenstore, exist_ok=True)
 
-            _client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-            _client.login(tokenstore)
+            client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+            client.login(tokenstore)
+            _client = client
             print("[garmin] Logged in successfully.")
             _last_error = None
         except Exception as e:
+            _client = None  # Reset client on login failure
             _last_error = f"{type(e).__name__}: {str(e)}"
             print(f"[garmin] Login failed: {e}")
             print(f"[garmin] Error type: {type(e).__name__}")
