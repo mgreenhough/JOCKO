@@ -123,6 +123,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /deactivate - Deactivate penalties (messages still active)
 /dormant - Put Jocko to sleep (completely silent)
 /debug - Show debug info for troubleshooting
+/testwake - Test wake-up message (10 second delay)
 
 **Daily Commitments:**
 Simply message: "WAKE: 0600, GYM: 0700"
@@ -472,13 +473,6 @@ def main():
     app.add_handler(CommandHandler("status",    cmd_status))
     app.add_handler(CommandHandler("goal",      cmd_goal))
     app.add_handler(CommandHandler("intensity", cmd_intensity))
-    app.add_handler(CommandHandler("activate",  cmd_activate))
-    app.add_handler(CommandHandler("deactivate", cmd_deactivate))
-    app.add_handler(CommandHandler("dormant", cmd_dormant))
-    app.add_handler(CommandHandler("timezone", cmd_timezone))
-    app.add_handler(CommandHandler("debug", cmd_debug))
-    app.add_handler(CommandHandler("testwake", cmd_testwake))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CommandHandler("frequency", cmd_frequency))
     app.add_handler(CommandHandler("penalty",   cmd_penalty))
     app.add_handler(CommandHandler("recipient", cmd_recipient))
@@ -487,6 +481,10 @@ def main():
     app.add_handler(CommandHandler("commands",  cmd_commands))
     app.add_handler(CommandHandler("activate",  cmd_activate))
     app.add_handler(CommandHandler("deactivate", cmd_deactivate))
+    app.add_handler(CommandHandler("dormant",   cmd_dormant))
+    app.add_handler(CommandHandler("timezone",  cmd_timezone))
+    app.add_handler(CommandHandler("debug",     cmd_debug))
+    app.add_handler(CommandHandler("testwake",  cmd_testwake))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("[main] Bot running...")
