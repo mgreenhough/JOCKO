@@ -393,9 +393,19 @@ async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Test /pull (Garmin connection)
     try:
-        # Just check if garmin module is accessible, don't actually pull
-        import garmin
-        results.append("✅ /pull - Module accessible")
+        # Actually test pulling activities, not just importing the module
+        count = garmin.pull_activities()
+        if count > 0:
+            results.append(f"✅ /pull - Working (pulled {count} activities)")
+        elif count == 0:
+            # Check if client was created successfully
+            client = garmin._get_client()
+            if client:
+                results.append("⚠️ /pull - Connected but no activities found")
+            else:
+                results.append("❌ /pull - Failed: Could not connect to Garmin")
+        else:
+            results.append("❌ /pull - Failed: Error during pull")
     except Exception as e:
         results.append(f"❌ /pull - Failed: {str(e)[:50]}")
 
