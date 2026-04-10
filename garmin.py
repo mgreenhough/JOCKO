@@ -5,23 +5,30 @@ import database
 import timezone
 
 _client = None
+_last_error = None
 
 def _get_client():
-    global _client
+    global _client, _last_error
     if _client is None:
         if not GARMIN_EMAIL or not GARMIN_PASSWORD:
-            print("[garmin] No credentials provided.")
+            _last_error = "No credentials configured"
+            print(f"[garmin] {_last_error}")
             return None
         try:
             print(f"[garmin] Attempting login with email: {GARMIN_EMAIL}")
             _client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             _client.login()
             print("[garmin] Logged in successfully.")
+            _last_error = None
         except Exception as e:
+            _last_error = f"{type(e).__name__}: {str(e)}"
             print(f"[garmin] Login failed: {e}")
             print(f"[garmin] Error type: {type(e).__name__}")
             return None
     return _client
+
+def get_last_error():
+    return _last_error
 
 def _map_activity_type(atype):
     """Map Garmin activity type to our simplified types."""
@@ -36,12 +43,18 @@ def _map_activity_type(atype):
         return "other"
 
 def pull_activities(days=14):
+    """
+    Pull activities from Garmin Connect.
+    Returns a tuple: (count, error_message)
+    - count: number of activities pulled (0 if error or no activities)
+    - error_message: None if successful, error string if failed
+    """
     client = _get_client()
 
     if not client:
-        print("[garmin] No client available - not seeding dummy data automatically.")
-        print("[garmin] Run /pull command manually to see detailed errors.")
-        return 0
+        error_msg = _last_error or "Unknown error - client creation failed"
+        print(f"[garmin] {error_msg}")
+        return 0, error_msg
 
     try:
         start_date = timezone.now_local() - timedelta(days=days)
@@ -59,7 +72,7 @@ def pull_activities(days=14):
 
         if not activities:
             print("[garmin] No activities found in date range.")
-            return 0
+            return 0, None
 
         # Get body battery data if available
         try:
@@ -77,7 +90,7 @@ def pull_activities(days=14):
 
         count = 0
         last_activity = None
-        
+
         for a in activities:
             garmin_id    = a.get("activityId")
             name         = a.get("activityName", "Activity")
@@ -90,7 +103,7 @@ def pull_activities(days=14):
             # Get both time fields for timezone detection
             start_time_local = a.get("startTimeLocal", "")
             start_time_gmt = a.get("startTimeGMT", "")
-            
+
             # Store UTC time in ISO format
             start_time_utc = None
             if start_time_gmt:
@@ -99,7 +112,7 @@ def pull_activities(days=14):
                 except Exception as e:
                     print(f"[garmin] Error parsing GMT time: {e}")
                     start_time_utc = start_time_gmt
-            
+
             # Get date string from local time for body battery lookup
             start_date_str = start_time_local[:10] if start_time_local else timezone.now_utc().strftime("%Y-%m-%d")
 
@@ -125,7 +138,7 @@ def pull_activities(days=14):
                 avg_hr, calories, bb_start, bb_end, start_time_utc
             )
             count += 1
-            
+
             # Track last activity for timezone detection
             if start_time_local and start_time_gmt:
                 last_activity = {
@@ -134,18 +147,19 @@ def pull_activities(days=14):
                 }
 
         print(f"[garmin] Pulled {count} activities.")
-        
+
         # Update timezone from the most recent activity
         if last_activity:
             tz_name = timezone.update_timezone_from_garmin_activity(last_activity)
             if tz_name:
                 print(f"[garmin] Timezone updated to {tz_name}")
-        
-        return count
+
+        return count, None
 
     except Exception as e:
+        error_msg = f"{type(e).__name__}: {str(e)}"
         print(f"[garmin] Error pulling activities: {e}")
         print(f"[garmin] Error type: {type(e).__name__}")
         import traceback
         traceback.print_exc()
-        return 0
+        return 0, error_msg

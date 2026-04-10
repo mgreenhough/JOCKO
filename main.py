@@ -200,11 +200,21 @@ async def cmd_recipient(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_pull(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Pulling Garmin data...")
-    count = garmin.pull_activities()
+    result = garmin.pull_activities()
+
+    # Handle both old (int) and new (tuple) return formats
+    if isinstance(result, tuple):
+        count, error = result
+    else:
+        count = result
+        error = None
+
     if count > 0:
         await update.message.reply_text(f"✅ Pulled {count} activities from Garmin.")
+    elif error:
+        await update.message.reply_text(f"❌ Pull failed: {error}")
     else:
-        await update.message.reply_text("⚠️ No activities pulled. Check logs for details or verify Garmin credentials.")
+        await update.message.reply_text("⚠️ No activities found in the last 14 days.")
 
 
 async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -394,18 +404,26 @@ async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Test /pull (Garmin connection)
     try:
         # Actually test pulling activities, not just importing the module
-        count = garmin.pull_activities()
+        result = garmin.pull_activities()
+
+        # Handle both old (int) and new (tuple) return formats
+        if isinstance(result, tuple):
+            count, error = result
+        else:
+            count = result
+            error = None
+
         if count > 0:
             results.append(f"✅ /pull - Working (pulled {count} activities)")
-        elif count == 0:
+        elif error:
+            results.append(f"❌ /pull - Failed: {error[:80]}")
+        else:
             # Check if client was created successfully
             client = garmin._get_client()
             if client:
                 results.append("⚠️ /pull - Connected but no activities found")
             else:
                 results.append("❌ /pull - Failed: Could not connect to Garmin")
-        else:
-            results.append("❌ /pull - Failed: Error during pull")
     except Exception as e:
         results.append(f"❌ /pull - Failed: {str(e)[:50]}")
 
