@@ -118,7 +118,7 @@ def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) ->
             gym_time = datetime.strptime(gym_time_str, "%H%M").time()
 
         # Create timezone-aware datetime for gym time
-        gym_datetime = timezone.get_user_timezone().localize(datetime.combine(today, gym_time))
+        gym_datetime = datetime.combine(today, gym_time).replace(tzinfo=timezone.get_user_timezone())
         window_end = gym_datetime + timedelta(minutes=window_minutes)
 
         # Get today's activities - query using UTC times
@@ -194,9 +194,9 @@ def _get_hr_trend():
     """Calculate HR trend over last 7 days vs previous 7 days."""
     now_local = timezone.now_local()
     today = now_local.date()
-    recent_start_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=7), datetime.min.time()))
-    recent_end_local = timezone.get_user_timezone().localize(datetime.combine(today, datetime.min.time()))
-    previous_start_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=14), datetime.min.time()))
+    recent_start_local = datetime.combine(today - timedelta(days=7), datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
+    recent_end_local = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
+    previous_start_local = datetime.combine(today - timedelta(days=14), datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
     previous_end_local = recent_start_local
 
     recent_start_utc = timezone.to_utc(recent_start_local).isoformat()
@@ -228,18 +228,17 @@ def _calculate_fatigue_score():
     """
     now_local = timezone.now_local()
     today = now_local.date()
-    week_ago_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=7), datetime.min.time()))
-    two_weeks_ago_local = timezone.get_user_timezone().localize(datetime.combine(today - timedelta(days=14), datetime.min.time()))
-    today_local = timezone.get_user_timezone().localize(datetime.combine(today, datetime.min.time()))
+    week_ago_local = datetime.combine(today - timedelta(days=7), datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
+    two_weeks_ago_local = datetime.combine(today - timedelta(days=14), datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
+    today_local = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
 
     week_ago_utc = timezone.to_utc(week_ago_local).isoformat()
     two_weeks_ago_utc = timezone.to_utc(two_weeks_ago_local).isoformat()
     today_utc = timezone.to_utc(today_local).isoformat()
-    two_weeks_ago = (today - timedelta(days=14)).isoformat()
 
     # Get recent activities
-    recent_activities = database.get_activities_between(week_ago, today.isoformat())
-    previous_activities = database.get_activities_between(two_weeks_ago, week_ago)
+    recent_activities = database.get_activities_between(week_ago_utc, today_utc)
+    previous_activities = database.get_activities_between(two_weeks_ago_utc, week_ago_utc)
 
     score = 0
     factors = []
@@ -371,7 +370,7 @@ def generate_weekly_report():
     penalty_start = database.get_setting("penalty_start_date")
     in_grace_period = False
     grace_note = ""
-    if is_active and penalty_start and this_week < penalty_start:
+    if is_active and penalty_start and this_week[:10] < penalty_start:
         in_grace_period = True
         grace_note = f"GRACE PERIOD: Penalties start on {penalty_start}. Use this week to establish your routine."
     elif not is_active:
@@ -412,7 +411,7 @@ def get_status():
     status_extra = ""
     if not is_active:
         status_extra = "\n\n🔴 Jocko is DEACTIVATED - use /activate to enable"
-    elif penalty_start and this_week.isoformat() < penalty_start:
+    elif penalty_start and this_week[:10] < penalty_start:
         status_extra = f"\n\n🟡 GRACE PERIOD - Penalties start {penalty_start}"
     else:
         status_extra = "\n\n🟢 Jocko is ACTIVE - Penalties enabled"
@@ -442,7 +441,7 @@ def chat(user_message):
     is_active = database.get_setting("jocko_active") == "1"
     penalty_start = database.get_setting("penalty_start_date")
     in_grace_period = False
-    if is_active and penalty_start and this_week < penalty_start:
+    if is_active and penalty_start and this_week[:10] < penalty_start:
         in_grace_period = True
 
     system_prompt = _base_persona_prompt(

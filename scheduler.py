@@ -235,7 +235,7 @@ async def schedule_tomorrow_jobs():
 
 async def send_weekly_report():
     """Generate and send weekly report via Telegram."""
-    print(f"[scheduler] Sending weekly report at {datetime.now().isoformat()}")
+    print(f"[scheduler] Sending weekly report at {timezone.now_local().isoformat()}")
     try:
         report = coach.generate_weekly_report()
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -246,7 +246,7 @@ async def send_weekly_report():
 
 async def check_and_apply_penalty():
     """Check goal compliance and trigger penalty if goals missed."""
-    print(f"[scheduler] Checking goal compliance at {datetime.now().isoformat()}")
+    print(f"[scheduler] Checking goal compliance at {timezone.now_local().isoformat()}")
     try:
         # Check if Jocko is active
         is_active = database.get_setting("jocko_active") == "1"
@@ -259,7 +259,7 @@ async def check_and_apply_penalty():
             return
 
         # If penalty_start_date is set and we're before that date, skip
-        if penalty_start and week_start < penalty_start:
+        if penalty_start and week_start[:10] < penalty_start:
             print(f"[scheduler] Penalty period hasn't started yet (starts {penalty_start}) - skipping")
             return
 
@@ -387,7 +387,7 @@ def _generate_proactive_message(context_type, intensity, extra_context=None):
     grace_context = ""
     if not is_active:
         grace_context = "\nNote: Jocko is currently deactivated. No penalties will be applied."
-    elif penalty_start and week_start < penalty_start:
+    elif penalty_start and week_start[:10] < penalty_start:
         grace_context = f"\nNote: This is a grace period week. Penalties start on {penalty_start}. Use this time to establish the routine."
 
     system_prompt = f"""You are a personal accountability and fitness coach. Your intensity level is {intensity}/10.
@@ -431,7 +431,7 @@ async def evening_commitment_prompt():
         if frequency < 1:
             return
 
-        print(f"[scheduler] Evening commitment prompt at {datetime.now().isoformat()}")
+        print(f"[scheduler] Evening commitment prompt at {timezone.now_local().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
 
         message = _generate_proactive_message("evening_commitment", intensity)
@@ -456,7 +456,7 @@ async def morning_check_in():
         if frequency < 1:
             return
         
-        print(f"[scheduler] Morning check-in at {datetime.now().isoformat()}")
+        print(f"[scheduler] Morning check-in at {timezone.now_local().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
         
         # Get current status for context
@@ -493,21 +493,23 @@ async def midday_nudge():
             return
 
         # Check if session already logged today
-        today = timezone.now_local().date().isoformat()
-        tomorrow = (timezone.now_local().date() + timedelta(days=1)).isoformat()
-        todays_activities = database.get_activities_between(today, tomorrow)
+        today_local = timezone.now_local()
+        today_start = timezone.to_utc(today_local.replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()
+        tomorrow_start = timezone.to_utc((today_local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()
+        todays_activities = database.get_activities_between(today_start, tomorrow_start)
 
         if todays_activities:
             print("[scheduler] Midday nudge skipped - session already logged today")
             return
 
         # Check if today was a committed rest day
-        commitment = database.get_daily_commitment(today)
+        today_str = today_local.date().isoformat()
+        commitment = database.get_daily_commitment(today_str)
         if commitment and commitment[1] and commitment[1].upper() in ("REST", "NONE"):
             print("[scheduler] Midday nudge skipped - today was a committed rest day")
             return
 
-        print(f"[scheduler] Midday nudge at {datetime.now().isoformat()}")
+        print(f"[scheduler] Midday nudge at {timezone.now_local().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
 
         message = _generate_proactive_message("midday_nudge", intensity)
@@ -534,18 +536,21 @@ async def evening_warning():
             return
 
         # Check if session already logged today
-        today = timezone.now_local().date().isoformat()
-        tomorrow = (timezone.now_local().date() + timedelta(days=1)).isoformat()
-        todays_activities = database.get_activities_between(today, tomorrow)
+        today_local = timezone.now_local()
+        today_start = timezone.to_utc(today_local.replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()
+        tomorrow_start = timezone.to_utc((today_local + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)).isoformat()
+        todays_activities = database.get_activities_between(today_start, tomorrow_start)
 
         if todays_activities:
             print("[scheduler] Evening warning skipped - session already logged today")
             return
 
         # Check if today was a committed rest day
-        commitment = database.get_daily_commitment(today)
+        today_str = today_local.date().isoformat()
+        commitment = database.get_daily_commitment(today_str)
         if commitment and commitment[1] and commitment[1].upper() in ("REST", "NONE"):
             print("[scheduler] Evening warning skipped - today was a committed rest day")
+            return
             return
 
         # Check if goal is at risk (not just unmet, but actually at risk given days remaining)
@@ -569,7 +574,7 @@ async def evening_warning():
             print(f"[scheduler] Evening warning skipped - on track ({workouts_done}/{workouts_goal}, {days_left} days left)")
             return
 
-        print(f"[scheduler] Evening warning at {datetime.now().isoformat()}")
+        print(f"[scheduler] Evening warning at {timezone.now_local().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
 
         extra_context = {
@@ -612,7 +617,7 @@ async def breach_alert():
 
         # Check if mathematically impossible
         if workouts_done + days_left < workouts_goal:
-            print(f"[scheduler] Breach alert at {datetime.now().isoformat()}")
+            print(f"[scheduler] Breach alert at {timezone.now_local().isoformat()}")
             intensity = int(database.get_setting("intensity") or 5)
 
             extra_context = {
@@ -644,7 +649,7 @@ async def sunday_preweek_planning():
         if frequency < 1:
             return
 
-        print(f"[scheduler] Sunday pre-week planning at {datetime.now().isoformat()}")
+        print(f"[scheduler] Sunday pre-week planning at {timezone.now_local().isoformat()}")
         intensity = int(database.get_setting("intensity") or 5)
         
         message = _generate_proactive_message("sunday_planning", intensity)

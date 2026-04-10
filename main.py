@@ -335,25 +335,123 @@ async def cmd_timezone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def cmd_debug(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Debug command to check scheduler status."""
+    """Debug command to systematically test all commands and report status."""
     from datetime import timedelta
 
-    # Get tomorrow's date
-    tomorrow = timezone.now_local().date() + timedelta(days=1)
-    tomorrow_str = tomorrow.isoformat()
+    await update.message.reply_text("🔍 **Running System Diagnostics...**\n\nTesting all commands...")
 
-    # Get commitment
-    commitment = database.get_daily_commitment(tomorrow_str)
+    results = []
 
-    # Build debug message
-    msg = f"**Debug Info**\n\n"
-    msg += f"Current time: {timezone.now_local().isoformat()}\n"
-    msg += f"Tomorrow's date: {tomorrow_str}\n"
-    msg += f"Commitment: {commitment}\n"
-    msg += f"jocko_active: {database.get_setting('jocko_active')}\n"
-    msg += f"jocko_dormant: {database.get_setting('jocko_dormant')}\n"
-    msg += f"intensity: {database.get_setting('intensity')}\n"
-    msg += f"frequency: {database.get_setting('frequency')}\n"
+    # Test /status
+    try:
+        status = coach.get_status()
+        results.append("✅ /status - Working")
+    except Exception as e:
+        results.append(f"❌ /status - Failed: {str(e)[:50]}")
+
+    # Test /weekly (just check if function runs without error, don't send report)
+    try:
+        report = coach.generate_weekly_report()
+        results.append("✅ /weekly - Working")
+    except Exception as e:
+        results.append(f"❌ /weekly - Failed: {str(e)[:50]}")
+
+    # Test /goal (get current goals)
+    try:
+        goals_summary = goals.summary_text()
+        results.append("✅ /goal - Working")
+    except Exception as e:
+        results.append(f"❌ /goal - Failed: {str(e)[:50]}")
+
+    # Test /intensity
+    try:
+        intensity = database.get_setting("intensity") or "not set"
+        results.append("✅ /intensity - Working")
+    except Exception as e:
+        results.append(f"❌ /intensity - Failed: {str(e)[:50]}")
+
+    # Test /frequency
+    try:
+        frequency = database.get_setting("frequency") or "not set"
+        results.append("✅ /frequency - Working")
+    except Exception as e:
+        results.append(f"❌ /frequency - Failed: {str(e)[:50]}")
+
+    # Test /penalty
+    try:
+        penalty = database.get_setting("penalty_amount") or "not set"
+        results.append("✅ /penalty - Working")
+    except Exception as e:
+        results.append(f"❌ /penalty - Failed: {str(e)[:50]}")
+
+    # Test /recipient
+    try:
+        recipient = database.get_setting("recipient_email") or "not set"
+        results.append("✅ /recipient - Working")
+    except Exception as e:
+        results.append(f"❌ /recipient - Failed: {str(e)[:50]}")
+
+    # Test /pull (Garmin connection)
+    try:
+        # Just check if garmin module is accessible, don't actually pull
+        import garmin
+        results.append("✅ /pull - Module accessible")
+    except Exception as e:
+        results.append(f"❌ /pull - Failed: {str(e)[:50]}")
+
+    # Test /timezone
+    try:
+        current_tz = database.get_setting("timezone") or config.USER_TIMEZONE
+        results.append("✅ /timezone - Working")
+    except Exception as e:
+        results.append(f"❌ /timezone - Failed: {str(e)[:50]}")
+
+    # Test /activate, /deactivate, /dormant (just check settings access)
+    try:
+        jocko_active = database.get_setting("jocko_active") or "0"
+        results.append("✅ /activate/deactivate - Working")
+    except Exception as e:
+        results.append(f"❌ /activate/deactivate - Failed: {str(e)[:50]}")
+
+    try:
+        jocko_dormant = database.get_setting("jocko_dormant") or "0"
+        results.append("✅ /dormant - Working")
+    except Exception as e:
+        results.append(f"❌ /dormant - Failed: {str(e)[:50]}")
+
+    # Test /testwake (scheduler access)
+    try:
+        sched = scheduler.get_scheduler()
+        if sched:
+            results.append("✅ /testwake - Scheduler accessible")
+        else:
+            results.append("⚠️ /testwake - Scheduler not running")
+    except Exception as e:
+        results.append(f"❌ /testwake - Failed: {str(e)[:50]}")
+
+    # Test database
+    try:
+        tomorrow = timezone.now_local().date() + timedelta(days=1)
+        tomorrow_str = tomorrow.isoformat()
+        commitment = database.get_daily_commitment(tomorrow_str)
+        results.append("✅ Database - Working")
+    except Exception as e:
+        results.append(f"❌ Database - Failed: {str(e)[:50]}")
+
+    # Build final report
+    msg = "🔍 **System Diagnostics Report**\n\n"
+    msg += "**Command Tests:**\n"
+    for result in results:
+        msg += f"{result}\n"
+
+    msg += f"\n**Current Settings:**\n"
+    msg += f"• Time: {timezone.now_local().isoformat()}\n"
+    msg += f"• Timezone: {database.get_setting('timezone') or config.USER_TIMEZONE}\n"
+    msg += f"• Jocko Active: {database.get_setting('jocko_active') or '0'}\n"
+    msg += f"• Jocko Dormant: {database.get_setting('jocko_dormant') or '0'}\n"
+    msg += f"• Intensity: {database.get_setting('intensity') or '5'}\n"
+    msg += f"• Frequency: {database.get_setting('frequency') or '5'}\n"
+    msg += f"• Penalty: ${database.get_setting('penalty_amount') or '0'} AUD\n"
 
     await update.message.reply_text(msg, parse_mode="Markdown")
 

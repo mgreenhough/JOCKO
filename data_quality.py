@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime
 from typing import List, Dict, Tuple
 from config import DB_PATH
+import timezone
 
 # Flag types
 FLAG_LOW_HEART_RATE = "low_avg_hr"
@@ -94,7 +95,7 @@ def save_flags(activity_id: int, flags: List[Tuple[str, str]]):
         cursor.execute("""
             INSERT INTO data_quality_flags (activity_id, flag_type, description, timestamp)
             VALUES (?, ?, ?, ?)
-        """, (activity_id, flag_type, description, datetime.now().isoformat()))
+        """, (activity_id, flag_type, description, timezone.now_utc().isoformat()))
     
     conn.commit()
     conn.close()

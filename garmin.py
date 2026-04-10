@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from garminconnect import Garmin
 from config import GARMIN_EMAIL, GARMIN_PASSWORD
 import database
@@ -44,8 +44,8 @@ def pull_activities(days=14):
         return 0
 
     try:
-        start_date = datetime.now() - timedelta(days=days)
-        end_date = datetime.now()
+        start_date = timezone.now_local() - timedelta(days=days)
+        end_date = timezone.now_local()
 
         print(f"[garmin] Fetching activities from {start_date.date()} to {end_date.date()}")
 
@@ -101,7 +101,7 @@ def pull_activities(days=14):
                     start_time_utc = start_time_gmt
             
             # Get date string from local time for body battery lookup
-            start_date_str = start_time_local[:10] if start_time_local else datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+            start_date_str = start_time_local[:10] if start_time_local else timezone.now_utc().strftime("%Y-%m-%d")
 
             # Try to get body battery for activity date
             bb_start = None

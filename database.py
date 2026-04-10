@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 from config import DB_PATH
+import timezone
 
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
@@ -183,7 +184,7 @@ def set_goal(key, value):
         current["steps_per_day"],
         current["calories_per_week"],
         current["distance_per_week"],
-        datetime.now().isoformat()
+        timezone.now_utc().isoformat()
     ))
     conn.commit()
     conn.close()
@@ -226,11 +227,10 @@ def get_latest_body_battery():
     return row[0] if row else None
 
 def save_conversation(role, content):
-    from datetime import datetime
     conn = get_connection()
     c = conn.cursor()
     c.execute("INSERT INTO conversations (role, content, created_at) VALUES (?, ?, ?)",
-              (role, content, datetime.now().isoformat()))
+              (role, content, timezone.now_utc().isoformat()))
     conn.commit()
     conn.close()
 
@@ -243,13 +243,12 @@ def get_recent_conversations(limit):
     return list(reversed(rows))
 
 def save_daily_commitment(date_str, wakeup_time, gym_time):
-    from datetime import datetime
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         INSERT OR REPLACE INTO daily_commitments (date, wakeup_time, gym_time, created_at)
         VALUES (?, ?, ?, ?)
-    """, (date_str, wakeup_time, gym_time, datetime.now().isoformat()))
+    """, (date_str, wakeup_time, gym_time, timezone.now_utc().isoformat()))
     conn.commit()
     conn.close()
 
@@ -262,13 +261,12 @@ def get_daily_commitment(date_str):
     return row
 
 def log_penalty(week_start, goal_workouts, actual_workouts, goal_sprints, actual_sprints, penalty_amount, paid, recipient_email):
-    from datetime import datetime
     conn = get_connection()
     c = conn.cursor()
     c.execute("""
         INSERT INTO penalty_log
         (week_start, goal_workouts, actual_workouts, goal_sprints, actual_sprints, penalty_amount, paid, recipient_email, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (week_start, goal_workouts, actual_workouts, goal_sprints, actual_sprints, penalty_amount, paid, recipient_email, datetime.now().isoformat()))
+    """, (week_start, goal_workouts, actual_workouts, goal_sprints, actual_sprints, penalty_amount, paid, recipient_email, timezone.now_utc().isoformat()))
     conn.commit()
     conn.close()
