@@ -241,7 +241,7 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Always check and install requirements to ensure dependencies are up to date
         await update.message.reply_text("📦 Checking dependencies...")
         pip_result = subprocess.run(
-            ["python3", "-m", "pip", "install", "-r", "requirements.txt"],
+            ["/opt/coach/venv/bin/pip", "install", "-r", "requirements.txt"],
             cwd="/opt/coach",
             capture_output=True,
             text=True,
