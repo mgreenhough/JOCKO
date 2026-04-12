@@ -175,52 +175,58 @@ async def cmd_frequency(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Frequency set to {args[0]}/10.")
 
 async def cmd_penalty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    if not args:
-        amount = database.get_setting("penalty_amount")
-        await update.message.reply_text(f"Current penalty: ${amount} AUD.")
-        return
+    try:
+        args = context.args
+        if not args:
+            amount = database.get_setting("penalty_amount")
+            await update.message.reply_text(f"Current penalty: ${amount} AUD.")
+            return
 
-    # Strip $ and other currency symbols, then validate
-    clean_arg = args[0].replace("$", "").replace(",", "").replace("AUD", "").replace(" aud", "").strip()
-    if not clean_arg.replace(".", "").isdigit():
-        await update.message.reply_text("Usage: /penalty 100")
-        return
+        # Strip $ and other currency symbols, then validate
+        clean_arg = args[0].replace("$", "").replace(",", "").replace("AUD", "").replace(" aud", "").strip()
+        if not clean_arg.replace(".", "").isdigit():
+            await update.message.reply_text("Usage: /penalty 100")
+            return
 
-    new_amount = float(clean_arg)
+        new_amount = float(clean_arg)
 
-    # Check PayPal balance before setting new penalty amount
-    import payments
-    balance_check = payments.verify_sufficient_funds(new_amount)
+        # Check PayPal balance before setting new penalty amount
+        import payments
+        balance_check = payments.verify_sufficient_funds(new_amount)
 
-    if not balance_check["sufficient"]:
+        if not balance_check["sufficient"]:
+            balance = balance_check.get("balance")
+            shortfall = balance_check.get("shortfall", new_amount)
+
+            warning_msg = (
+                f"⚠️ **WARNING: Insufficient PayPal Balance**\n\n"
+                f"You are setting penalty to **${new_amount:.2f} AUD**, but your PayPal balance is insufficient:\n"
+                f"• Available: ${balance:.2f} AUD\n"
+                f"• Required: ${new_amount:.2f} AUD\n"
+                f"• Shortfall: ${shortfall:.2f} AUD\n\n"
+                f"⚠️ **If you miss your goals, the penalty will FAIL due to insufficient funds.**\n\n"
+                f"Penalty amount has been set to ${new_amount:.2f} AUD anyway, but please add funds to your PayPal account."
+            )
+            # Update both database and config
+            database.set_setting("penalty_amount", clean_arg)
+            config.PENALTY_AMOUNT = clean_arg
+            await update.message.reply_text(warning_msg, parse_mode="Markdown")
+            return
+
+        # Sufficient funds - confirm setting
         balance = balance_check.get("balance")
-        shortfall = balance_check.get("shortfall", new_amount)
-
-        warning_msg = (
-            f"⚠️ **WARNING: Insufficient PayPal Balance**\n\n"
-            f"You are setting penalty to **${new_amount:.2f} AUD**, but your PayPal balance is insufficient:\n"
-            f"• Available: ${balance:.2f} AUD\n"
-            f"• Required: ${new_amount:.2f} AUD\n"
-            f"• Shortfall: ${shortfall:.2f} AUD\n\n"
-            f"⚠️ **If you miss your goals, the penalty will FAIL due to insufficient funds.**\n\n"
-            f"Penalty amount has been set to ${new_amount:.2f} AUD anyway, but please add funds to your PayPal account."
-        )
         # Update both database and config
         database.set_setting("penalty_amount", clean_arg)
         config.PENALTY_AMOUNT = clean_arg
-        await update.message.reply_text(warning_msg, parse_mode="Markdown")
-        return
-
-    # Sufficient funds - confirm setting
-    balance = balance_check.get("balance")
-    # Update both database and config
-    database.set_setting("penalty_amount", clean_arg)
-    config.PENALTY_AMOUNT = clean_arg
-    await update.message.reply_text(
-        f"✅ Penalty amount updated to ${new_amount:.2f} AUD.\n"
-        f"💰 PayPal balance: ${balance:.2f} AUD (sufficient for penalty)."
-    )
+        await update.message.reply_text(
+            f"✅ Penalty amount updated to ${new_amount:.2f} AUD.\n"
+            f"💰 PayPal balance: ${balance:.2f} AUD (sufficient for penalty)."
+        )
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        logging.error(f"[cmd_penalty] Error: {e}\n{error_details}")
+        await update.message.reply_text(f"❌ Error setting penalty: {str(e)}")
 
 async def cmd_recipient(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
