@@ -158,6 +158,13 @@ def _get_week_start(offset=0):
     monday_utc = timezone.to_utc(monday_local)
     return monday_utc.isoformat()
 
+def _get_week_start_local(offset=0):
+    """Get start of week (Monday) as local date string (YYYY-MM-DD) for grace period comparisons."""
+    now_local = timezone.now_local()
+    today = now_local.date()
+    monday = today - timedelta(days=today.weekday()) - timedelta(weeks=offset)
+    return monday.strftime('%Y-%m-%d')
+
 def _calculate_summary(week_start_str):
     activities = database.get_activities_since(week_start_str)
     total_distance = 0.0
@@ -370,7 +377,8 @@ def generate_weekly_report():
     penalty_start = database.get_setting("penalty_start_date")
     in_grace_period = False
     grace_note = ""
-    if is_active and penalty_start and this_week[:10] < penalty_start:
+    week_start_local = _get_week_start_local(0)
+    if is_active and penalty_start and week_start_local < penalty_start:
         in_grace_period = True
         grace_note = f"GRACE PERIOD: Penalties start on {penalty_start}. Use this week to establish your routine."
     elif not is_active:
@@ -419,7 +427,7 @@ def get_status():
             status_extra = "\n\n⏸️ Jocko is PAUSED - Use /revive to resume"
     elif not is_active:
         status_extra = "\n\n🔴 Jocko is DEACTIVATED - use /activate to enable"
-    elif penalty_start and this_week[:10] < penalty_start:
+    elif penalty_start and _get_week_start_local(0) < penalty_start:
         status_extra = f"\n\n🟡 GRACE PERIOD - Penalties start {penalty_start}"
     else:
         status_extra = "\n\n🟢 Jocko is ACTIVE - Penalties enabled"
@@ -476,7 +484,7 @@ Reflection: {stoic_entry['reflection']}
     is_active = database.get_setting("jocko_active") == "1"
     penalty_start = database.get_setting("penalty_start_date")
     in_grace_period = False
-    if is_active and penalty_start and this_week[:10] < penalty_start:
+    if is_active and penalty_start and _get_week_start_local(0) < penalty_start:
         in_grace_period = True
 
     # Get today's and tomorrow's commitments for context

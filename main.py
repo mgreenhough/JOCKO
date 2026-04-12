@@ -180,11 +180,14 @@ async def cmd_penalty(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = database.get_setting("penalty_amount")
         await update.message.reply_text(f"Current penalty: ${amount} AUD.")
         return
-    if not args[0].replace(".", "").isdigit():
+
+    # Strip $ and other currency symbols, then validate
+    clean_arg = args[0].replace("$", "").replace(",", "").replace("AUD", "").replace(" aud", "").strip()
+    if not clean_arg.replace(".", "").isdigit():
         await update.message.reply_text("Usage: /penalty 100")
         return
 
-    new_amount = float(args[0])
+    new_amount = float(clean_arg)
 
     # Check PayPal balance before setting new penalty amount
     import payments
@@ -204,16 +207,16 @@ async def cmd_penalty(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Penalty amount has been set to ${new_amount:.2f} AUD anyway, but please add funds to your PayPal account."
         )
         # Update both database and config
-        database.set_setting("penalty_amount", args[0])
-        config.PENALTY_AMOUNT = args[0]
+        database.set_setting("penalty_amount", clean_arg)
+        config.PENALTY_AMOUNT = clean_arg
         await update.message.reply_text(warning_msg, parse_mode="Markdown")
         return
 
     # Sufficient funds - confirm setting
     balance = balance_check.get("balance")
     # Update both database and config
-    database.set_setting("penalty_amount", args[0])
-    config.PENALTY_AMOUNT = args[0]
+    database.set_setting("penalty_amount", clean_arg)
+    config.PENALTY_AMOUNT = clean_arg
     await update.message.reply_text(
         f"✅ Penalty amount updated to ${new_amount:.2f} AUD.\n"
         f"💰 PayPal balance: ${balance:.2f} AUD (sufficient for penalty)."
