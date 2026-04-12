@@ -198,12 +198,15 @@ async def cmd_penalty(update: Update, context: ContextTypes.DEFAULT_TYPE):
             balance = balance_check.get("balance")
             shortfall = balance_check.get("shortfall", new_amount)
 
+            balance_str = f"${balance:.2f}" if balance is not None else "Unknown"
+            shortfall_str = f"${shortfall:.2f}" if shortfall is not None else f"${new_amount:.2f}"
+
             warning_msg = (
                 f"⚠️ **WARNING: Insufficient PayPal Balance**\n\n"
                 f"You are setting penalty to **${new_amount:.2f} AUD**, but your PayPal balance is insufficient:\n"
-                f"• Available: ${balance:.2f} AUD\n"
+                f"• Available: {balance_str} AUD\n"
                 f"• Required: ${new_amount:.2f} AUD\n"
-                f"• Shortfall: ${shortfall:.2f} AUD\n\n"
+                f"• Shortfall: {shortfall_str} AUD\n\n"
                 f"⚠️ **If you miss your goals, the penalty will FAIL due to insufficient funds.**\n\n"
                 f"Penalty amount has been set to ${new_amount:.2f} AUD anyway, but please add funds to your PayPal account."
             )
@@ -218,9 +221,10 @@ async def cmd_penalty(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Update both database and config
         database.set_setting("penalty_amount", clean_arg)
         config.PENALTY_AMOUNT = clean_arg
+        balance_str = f"${balance:.2f}" if balance is not None else "Unknown"
         await update.message.reply_text(
             f"✅ Penalty amount updated to ${new_amount:.2f} AUD.\n"
-            f"💰 PayPal balance: ${balance:.2f} AUD (sufficient for penalty)."
+            f"💰 PayPal balance: {balance_str} AUD (sufficient for penalty)."
         )
     except Exception as e:
         import traceback
