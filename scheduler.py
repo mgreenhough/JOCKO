@@ -144,8 +144,8 @@ def schedule_dynamic_jobs():
 
         # Schedule wake-up job (skip if NONE)
         if wakeup_time and wakeup_time.upper() != "NONE":
-            print(f"[scheduler] Parsing wake-up time: '{wakeup_time}' with base_date={schedule_date}")
-            wakeup_dt = _parse_time_to_datetime(wakeup_time, schedule_date)
+            print(f"[scheduler] Parsing wake-up time: '{wakeup_time}' with base_date={tomorrow}")
+            wakeup_dt = _parse_time_to_datetime(wakeup_time, tomorrow)
             if wakeup_dt:
                 print(f"[scheduler] Parsed wake-up datetime: {wakeup_dt.isoformat()}")
                 # Remove existing wake-up job if present
