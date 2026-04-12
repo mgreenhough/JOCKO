@@ -447,6 +447,23 @@ Author: {stoic_entry['author']}
 Reflection: {stoic_entry['reflection']}
 """
 
+    # Check if user is asking for today's Stoic passage
+    user_lower = user_message.lower()
+    is_stoic_request = any(phrase in user_lower for phrase in [
+        "stoic passage", "daily stoic", "today's stoic", "stoic entry",
+        "stoic quote", "stoic reflection", "what is today's passage",
+        "what's today's passage", "todays stoic", "todays passage"
+    ])
+
+    if is_stoic_request:
+        # Return the Stoic entry directly without AI processing
+        return f"""📖 Daily Stoic: {stoic_entry['title']}
+
+"{stoic_entry['quote']}"
+— {stoic_entry['author']}
+
+💭 Reflection: {stoic_entry['reflection']}"""
+
     # Check if in grace period
     is_active = database.get_setting("jocko_active") == "1"
     penalty_start = database.get_setting("penalty_start_date")
@@ -462,7 +479,6 @@ RULES:
 - You MUST use EXACTLY 2 sentences. No more, no less.
 - Count your sentences: First sentence. Second sentence. Done.
 - If you write more than 2 sentences, you have failed.
-- IMPORTANT: If the user asks about today's Stoic passage, quote from the TODAY'S DAILY STOIC ENTRY provided above. Share the title, quote, author, AND the full reflection.
 
 Use body battery and fatigue score as coaching colour — if fatigue is high or body battery is low, factor in recovery;
 if both are good, push harder. Use trends to assess whether the athlete is improving or regressing.
