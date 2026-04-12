@@ -566,7 +566,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if is_commitment:
             # This is a commitment message - save it
             tomorrow = (timezone.now_local() + timedelta(days=1)).date().isoformat()
-            database.save_daily_commitment(tomorrow, wakeup_time, gym_time)
+            save_success = database.save_daily_commitment(tomorrow, wakeup_time, gym_time)
+
+            if not save_success:
+                await update.message.reply_text("❌ Error saving commitment. Please try again.")
+                return
+
+            # Verify the commitment was actually saved
+            verify_commitment = database.get_daily_commitment(tomorrow)
+            if not verify_commitment or (verify_commitment[0] is None and verify_commitment[1] is None):
+                print(f"[main] WARNING: Commitment verification failed for {tomorrow}")
+                await update.message.reply_text("⚠️ Commitment may not have saved properly. Please check and resend if needed.")
+                return
+
+            verified_wakeup, verified_gym = verify_commitment
+            print(f"[main] Verified commitment saved: wake={verified_wakeup}, gym={verified_gym}")
 
             # Acknowledge the commitment
             response_parts = []
@@ -599,8 +613,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"[main] Commitment saved: wake={wakeup_time}, gym={gym_time}")
 
             # Immediately reschedule jobs to ensure wake-up alarm is set
-            # If it's after 9 PM, this schedules for tomorrow (the day after the commitment)
-            # If it's before 9 PM, this schedules for the commitment day
             scheduler.schedule_dynamic_jobs()
             print("[main] Dynamic jobs rescheduled after commitment")
 

@@ -437,6 +437,16 @@ def chat(user_message):
     fatigue_line = _fatigue_line()
     trend_line = _trend_line()
 
+    # Get today's Daily Stoic entry
+    stoic_entry = stoic.get_todays_stoic()
+    stoic_context = f"""
+TODAY'S DAILY STOIC ENTRY:
+Title: {stoic_entry['title']}
+Quote: "{stoic_entry['quote']}"
+Author: {stoic_entry['author']}
+Reflection: {stoic_entry['reflection']}
+"""
+
     # Check if in grace period
     is_active = database.get_setting("jocko_active") == "1"
     penalty_start = database.get_setting("penalty_start_date")
@@ -462,7 +472,9 @@ Current training context:
 {trend_line}
 {fatigue_line}
 {f"{bb_line}" if bb_line else ""}
-Total time this week: {current['total_time']} min"""
+Total time this week: {current['total_time']} min
+
+{stoic_context}"""
 
     messages = [{"role": "system", "content": system_prompt}]
     for role, content in history:

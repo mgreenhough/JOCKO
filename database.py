@@ -243,14 +243,32 @@ def get_recent_conversations(limit):
     return list(reversed(rows))
 
 def save_daily_commitment(date_str, wakeup_time, gym_time):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("""
-        INSERT OR REPLACE INTO daily_commitments (date, wakeup_time, gym_time, created_at)
-        VALUES (?, ?, ?, ?)
-    """, (date_str, wakeup_time, gym_time, timezone.now_utc().isoformat()))
-    conn.commit()
-    conn.close()
+    """Save daily commitment with error handling and validation."""
+    conn = None
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+
+        # Validate inputs - don't save NULL for actual commitments
+        if wakeup_time is None and gym_time is None:
+            print(f"[database] WARNING: Attempting to save commitment with NULL values for {date_str}")
+            # Still save it, but log the warning
+
+        c.execute("""
+            INSERT OR REPLACE INTO daily_commitments (date, wakeup_time, gym_time, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (date_str, wakeup_time, gym_time, timezone.now_utc().isoformat()))
+        conn.commit()
+        print(f"[database] Saved commitment for {date_str}: wake={wakeup_time}, gym={gym_time}")
+        return True
+    except Exception as e:
+        print(f"[database] ERROR saving commitment for {date_str}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 def get_daily_commitment(date_str):
     conn = get_connection()
