@@ -43,6 +43,11 @@ async def scheduled_wakeup():
     """Dynamic wake-up job - fires at user's committed wake-up time."""
     print(f"[scheduler] === WAKE-UP JOB FIRING at {timezone.now_local().isoformat()} (local) ===")
     try:
+        # Check if Jocko is paused due to insufficient funds
+        if database.get_setting("jocko_paused") == "1":
+            print("[scheduler] Jocko is paused - skipping wake-up message")
+            return
+
         # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping wake-up message")
@@ -72,6 +77,10 @@ async def scheduled_gym_checkin():
     """Dynamic gym check-in job - fires 120 min after committed gym time."""
     print(f"[scheduler] Gym check-in job firing at {timezone.now_local().isoformat()} (local)")
     try:
+        # Check if Jocko is paused due to insufficient funds
+        if database.get_setting("jocko_paused") == "1":
+            print("[scheduler] Jocko is paused - skipping gym check-in")
+            return
         # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
             print("[scheduler] Jocko is dormant - skipping gym check-in")
@@ -248,6 +257,20 @@ async def check_and_apply_penalty():
     """Check goal compliance and trigger penalty if goals missed."""
     print(f"[scheduler] Checking goal compliance at {timezone.now_local().isoformat()}")
     try:
+        # Check if Jocko is paused due to insufficient funds
+        if database.get_setting("jocko_paused") == "1":
+            reason = database.get_setting("jocko_paused_reason") or ""
+            print(f"[scheduler] Jocko is paused ({reason}) - skipping penalty check")
+            bot = Bot(token=TELEGRAM_BOT_TOKEN)
+            await bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text=f"⏸️ **Penalty check skipped - Jocko is paused**\n\n"
+                     f"Reason: {reason.replace('_', ' ').title()}\n"
+                     f"Use /revive to resume once funds are added.",
+                parse_mode="Markdown"
+            )
+            return
+
         # Check if Jocko is active
         is_active = database.get_setting("jocko_active") == "1"
         penalty_start = database.get_setting("penalty_start_date")
@@ -270,24 +293,49 @@ async def check_and_apply_penalty():
             print("[scheduler] All goals met - no penalty applied")
             bot = Bot(token=TELEGRAM_BOT_TOKEN)
             await bot.send_message(
-                chat_id=TELEGRAM_CHAT_ID, 
+                chat_id=TELEGRAM_CHAT_ID,
                 text="✅ GOALS MET! No penalty this week. Good work."
             )
             return
-        
+
         # Goals missed - apply penalty
         penalty_amount = float(database.get_setting("penalty_amount") or 1)
         recipient = database.get_setting("recipient_email") or PAYPAL_RECIPIENT_EMAIL
-        
+
         print(f"[scheduler] Goals missed - applying ${penalty_amount} penalty to {recipient}")
-        
-        # Send penalty via PayPal (uses $1 for testing)
+
+        # Send penalty via PayPal
         result = payments.send_penalty(
             amount=penalty_amount,
             recipient_email=recipient,
             week_start=week_start
         )
-        
+
+        # Check if penalty failed due to insufficient funds - pause the bot
+        if not result["success"] and result.get("insufficient_funds"):
+            balance = result.get("balance")
+            shortfall = result.get("shortfall", penalty_amount)
+
+            print(f"[scheduler] INSUFFICIENT FUNDS during penalty - pausing bot. Balance=${balance}, Required=${penalty_amount}")
+
+            # Pause the bot
+            database.set_setting("jocko_paused", "1")
+            database.set_setting("jocko_paused_reason", "insufficient_funds")
+            database.set_setting("jocko_paused_at", timezone.now_local().isoformat())
+
+            bot = Bot(token=TELEGRAM_BOT_TOKEN)
+            await bot.send_message(
+                chat_id=TELEGRAM_CHAT_ID,
+                text=f"🚨 **INSUFFICIENT FUNDS - BOT PAUSED**\n\n"
+                     f"PayPal Balance: ${balance:.2f if balance else 'N/A'} AUD\n"
+                     f"Required: ${penalty_amount:.2f} AUD\n"
+                     f"Shortfall: ${shortfall:.2f} AUD\n\n"
+                     f"⏸️ **All wake-ups, gym check-ins, and penalties are now PAUSED.**\n\n"
+                     f"Add funds to your PayPal account, then use /revive to resume.",
+                parse_mode="Markdown"
+            )
+            return
+
         # Log the penalty
         database.log_penalty(
             week_start=week_start,
@@ -299,7 +347,7 @@ async def check_and_apply_penalty():
             paid=1 if result["success"] else 0,
             recipient_email=recipient
         )
-        
+
         # Notify user
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         if result["success"]:
@@ -308,7 +356,7 @@ async def check_and_apply_penalty():
                 missed.append(f"workouts ({compliance['current']['session_count']}/{compliance['goals']['workouts_per_week']})")
             if not compliance["sprints_met"]:
                 missed.append(f"sprints ({compliance['current']['session_count']}/{compliance['goals']['sprints_per_week']})")
-            
+
             message = (
                 f"❌ GOALS MISSED: {', '.join(missed)}\n\n"
                 f"Penalty of ${penalty_amount} AUD sent to {recipient}.\n"
@@ -321,10 +369,10 @@ async def check_and_apply_penalty():
                 f"Error: {result.get('error', 'Unknown error')}\n\n"
                 f"Manual payment may be required."
             )
-        
+
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
         print(f"[scheduler] Penalty process complete: {result}")
-        
+
     except Exception as e:
         print(f"[scheduler] Error in penalty check: {e}")
 
@@ -417,7 +465,8 @@ REMEMBER: EXACTLY 2 SENTENCES. Count them."""
     return message
 
 async def evening_commitment_prompt():
-    """Evening commitment prompt - asks for wake-up and gym time. Fires daily at 8:00 PM."""
+    """Evening commitment prompt - asks for wake-up and gym time. Fires daily at 8:00 PM.
+    Skips if tomorrow's commitment is already recorded."""
     try:
         # Check if Jocko is dormant or deactivated
         if database.get_setting("jocko_dormant") == "1":
@@ -429,6 +478,15 @@ async def evening_commitment_prompt():
 
         frequency = int(database.get_setting("frequency") or 5)
         if frequency < 1:
+            return
+
+        # Check if tomorrow's commitment already exists
+        tomorrow = timezone.now_local().date() + timedelta(days=1)
+        tomorrow_str = tomorrow.isoformat()
+        existing_commitment = database.get_daily_commitment(tomorrow_str)
+
+        if existing_commitment and (existing_commitment[0] or existing_commitment[1]):
+            print(f"[scheduler] Tomorrow's commitment already recorded ({tomorrow_str}: wake={existing_commitment[0]}, gym={existing_commitment[1]}) - skipping prompt")
             return
 
         print(f"[scheduler] Evening commitment prompt at {timezone.now_local().isoformat()}")

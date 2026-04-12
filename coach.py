@@ -407,9 +407,17 @@ def get_status():
 
     # Check activation status
     is_active = database.get_setting("jocko_active") == "1"
+    is_paused = database.get_setting("jocko_paused") == "1"
+    pause_reason = database.get_setting("jocko_paused_reason") or ""
     penalty_start = database.get_setting("penalty_start_date")
     status_extra = ""
-    if not is_active:
+
+    if is_paused:
+        if pause_reason == "insufficient_funds":
+            status_extra = "\n\n⏸️ **Jocko is PAUSED - Insufficient Funds**\nUse /revive after adding PayPal funds"
+        else:
+            status_extra = "\n\n⏸️ Jocko is PAUSED - Use /revive to resume"
+    elif not is_active:
         status_extra = "\n\n🔴 Jocko is DEACTIVATED - use /activate to enable"
     elif penalty_start and this_week[:10] < penalty_start:
         status_extra = f"\n\n🟡 GRACE PERIOD - Penalties start {penalty_start}"
@@ -471,6 +479,28 @@ Reflection: {stoic_entry['reflection']}
     if is_active and penalty_start and this_week[:10] < penalty_start:
         in_grace_period = True
 
+    # Get today's and tomorrow's commitments for context
+    today_local = timezone.now_local().date()
+    today_str = today_local.isoformat()
+    tomorrow_str = (today_local + timedelta(days=1)).isoformat()
+
+    today_commitment = database.get_daily_commitment(today_str)
+    tomorrow_commitment = database.get_daily_commitment(tomorrow_str)
+
+    commitment_context = ""
+    if today_commitment:
+        wake_today, gym_today = today_commitment
+        if wake_today or gym_today:
+            commitment_context += f"\nToday's commitment ({today_str}): Wake={wake_today or 'N/A'}, Gym={gym_today or 'N/A'}"
+
+    if tomorrow_commitment:
+        wake_tomorrow, gym_tomorrow = tomorrow_commitment
+        if wake_tomorrow or gym_tomorrow:
+            commitment_context += f"\nTomorrow's commitment ({tomorrow_str}): Wake={wake_tomorrow or 'N/A'}, Gym={gym_tomorrow or 'N/A'}"
+
+    if not commitment_context:
+        commitment_context = "\nNo wake-up or gym commitments recorded yet."
+
     system_prompt = _base_persona_prompt(
         intensity,
         extra_capabilities=" You communicate via Telegram."
@@ -490,6 +520,7 @@ Current training context:
 {fatigue_line}
 {f"{bb_line}" if bb_line else ""}
 Total time this week: {current['total_time']} min
+{commitment_context}
 
 {stoic_context}"""
 

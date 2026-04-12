@@ -122,6 +122,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /activate - Activate Jocko (penalties start next week or wake from dormant)
 /deactivate - Deactivate penalties (messages still active)
 /dormant - Put Jocko to sleep (completely silent)
+/revive - Resume Jocko after adding PayPal funds (when paused)
 /debug - Show debug info for troubleshooting
 /testwake - Test wake-up message (10 second delay)
 
@@ -182,10 +183,41 @@ async def cmd_penalty(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args[0].replace(".", "").isdigit():
         await update.message.reply_text("Usage: /penalty 100")
         return
+
+    new_amount = float(args[0])
+
+    # Check PayPal balance before setting new penalty amount
+    import payments
+    balance_check = payments.verify_sufficient_funds(new_amount)
+
+    if not balance_check["sufficient"]:
+        balance = balance_check.get("balance")
+        shortfall = balance_check.get("shortfall", new_amount)
+
+        warning_msg = (
+            f"⚠️ **WARNING: Insufficient PayPal Balance**\n\n"
+            f"You are setting penalty to **${new_amount:.2f} AUD**, but your PayPal balance is insufficient:\n"
+            f"• Available: ${balance:.2f} AUD\n"
+            f"• Required: ${new_amount:.2f} AUD\n"
+            f"• Shortfall: ${shortfall:.2f} AUD\n\n"
+            f"⚠️ **If you miss your goals, the penalty will FAIL due to insufficient funds.**\n\n"
+            f"Penalty amount has been set to ${new_amount:.2f} AUD anyway, but please add funds to your PayPal account."
+        )
+        # Update both database and config
+        database.set_setting("penalty_amount", args[0])
+        config.PENALTY_AMOUNT = args[0]
+        await update.message.reply_text(warning_msg, parse_mode="Markdown")
+        return
+
+    # Sufficient funds - confirm setting
+    balance = balance_check.get("balance")
     # Update both database and config
     database.set_setting("penalty_amount", args[0])
     config.PENALTY_AMOUNT = args[0]
-    await update.message.reply_text(f"Penalty amount updated to ${args[0]} AUD.")
+    await update.message.reply_text(
+        f"✅ Penalty amount updated to ${new_amount:.2f} AUD.\n"
+        f"💰 PayPal balance: ${balance:.2f} AUD (sufficient for penalty)."
+    )
 
 async def cmd_recipient(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
@@ -327,12 +359,63 @@ async def cmd_dormant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Put Jocko in dormant mode - completely silent, no messages at all."""
     database.set_setting("jocko_active", "0")
     database.set_setting("jocko_dormant", "1")
+    database.set_setting("jocko_paused", "0")
+    database.set_setting("jocko_paused_reason", "")
     database.set_setting("penalty_start_date", "")
     await update.message.reply_text(
         "😴 **Jocko is now DORMANT**\n\n"
         "No messages, no reminders, no check-ins.\n"
         "Complete silence until you reactivate.\n\n"
         "Use /activate to wake Jocko up when you're ready.",
+        parse_mode="Markdown"
+    )
+
+async def cmd_revive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Revive Jocko after adding funds - checks balance and resumes if sufficient."""
+    await update.message.reply_text("🔄 Checking PayPal balance...")
+
+    # Check if paused
+    is_paused = database.get_setting("jocko_paused") == "1"
+    reason = database.get_setting("jocko_paused_reason") or ""
+
+    if not is_paused:
+        await update.message.reply_text(
+            "✅ **Jocko is not paused.**\n\n"
+            "Use /status to check current settings.\n"
+            "Use /activate if Jocko is deactivated.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Check funds and clear pause if sufficient
+    fund_check = payments.check_and_clear_pause_if_sufficient_funds()
+
+    if fund_check["paused"]:
+        balance = fund_check.get("balance")
+        required = fund_check.get("required")
+        shortfall = fund_check.get("shortfall", required - (balance or 0))
+
+        await update.message.reply_text(
+            f"❌ **Still Insufficient Funds**\n\n"
+            f"PayPal Balance: ${balance:.2f if balance else 'N/A'} AUD\n"
+            f"Required: ${required:.2f} AUD\n"
+            f"Shortfall: ${shortfall:.2f} AUD\n\n"
+            f"Please add funds to your PayPal account and try /revive again.",
+            parse_mode="Markdown"
+        )
+        return
+
+    # Sufficient funds - clear pause and reactivate
+    database.set_setting("jocko_paused", "0")
+    database.set_setting("jocko_paused_reason", "")
+    database.set_setting("jocko_active", "1")
+
+    balance = fund_check.get("balance")
+    await update.message.reply_text(
+        f"✅ **Jocko REVIVED!**\n\n"
+        f"PayPal Balance: ${balance:.2f if balance else 'N/A'} AUD (sufficient)\n"
+        f"Penalties are active again.\n\n"
+        f"You're back in the game. Stay disciplined.",
         parse_mode="Markdown"
     )
 
@@ -574,12 +657,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Verify the commitment was actually saved
             verify_commitment = database.get_daily_commitment(tomorrow)
-            if not verify_commitment or (verify_commitment[0] is None and verify_commitment[1] is None):
+            if not verify_commitment:
                 print(f"[main] WARNING: Commitment verification failed for {tomorrow}")
                 await update.message.reply_text("⚠️ Commitment may not have saved properly. Please check and resend if needed.")
                 return
 
             verified_wakeup, verified_gym = verify_commitment
+
+            # Check if what we tried to save matches what was actually saved
+            if (wakeup_time is not None and verified_wakeup is None) or (gym_time is not None and verified_gym is None):
+                print(f"[main] WARNING: Commitment mismatch - tried wake={wakeup_time}, gym={gym_time} but got wake={verified_wakeup}, gym={verified_gym}")
+                await update.message.reply_text("⚠️ Commitment may not have saved properly. Please check and resend if needed.")
+                return
+
             print(f"[main] Verified commitment saved: wake={verified_wakeup}, gym={verified_gym}")
 
             # Acknowledge the commitment
@@ -648,6 +738,7 @@ def main():
     app.add_handler(CommandHandler("activate",  cmd_activate))
     app.add_handler(CommandHandler("deactivate", cmd_deactivate))
     app.add_handler(CommandHandler("dormant",   cmd_dormant))
+    app.add_handler(CommandHandler("revive",    cmd_revive))
     app.add_handler(CommandHandler("timezone",  cmd_timezone))
     app.add_handler(CommandHandler("debug",     cmd_debug))
     app.add_handler(CommandHandler("testwake",  cmd_testwake))
