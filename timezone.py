@@ -46,24 +46,26 @@ def derive_timezone_from_garmin(local_time_str: str, gmt_time_str: str) -> Optio
         offset_hours = int((local - gmt).total_seconds() / 3600)
         
         # Map offset to common IANA timezones
-        # This is a simplified mapping - for production, consider more sophisticated detection
+        # Offset is local - UTC (e.g., Adelaide UTC+9:30 = +9.5, Sydney UTC+10 = +10)
+        # Note: Using rounded values since int() truncates
         offset_map = {
-            -12: "Pacific/Auckland",  # NZDT during daylight saving
-            -11: "Pacific/Auckland",
-            -10: "Australia/Sydney",  # AEDT during daylight saving
-            -9: "Australia/Sydney",
-            -8: "Australia/Brisbane",  # AEST
-            -7: "Asia/Tokyo",
-            -6: "Asia/Shanghai",
-            -5: "Asia/Shanghai",
+            -10: "Pacific/Honolulu",
+            -9: "America/Anchorage",
+            -8: "America/Los_Angeles",
+            -7: "America/Denver",
+            -6: "America/Chicago",
+            -5: "America/New_York",
             0: "UTC",
-            5: "America/New_York",
-            6: "America/Chicago",
-            7: "America/Denver",
-            8: "America/Los_Angeles",
-            9: "America/Anchorage",
-            10: "Pacific/Honolulu",
+            8: "Asia/Shanghai",
+            9: "Asia/Tokyo",
+            10: "Australia/Brisbane",  # AEST
+            11: "Australia/Sydney",    # AEDT during daylight saving
+            12: "Pacific/Auckland",    # NZDT
+            13: "Pacific/Auckland",
         }
+
+        # Round offset to nearest hour for mapping
+        rounded_offset = round(offset_hours)
         
         # Try to get stored timezone first to maintain consistency
         stored_tz = database.get_setting("timezone")
@@ -72,14 +74,14 @@ def derive_timezone_from_garmin(local_time_str: str, gmt_time_str: str) -> Optio
             try:
                 tz = ZoneInfo(stored_tz)
                 now = datetime.now(tz)
-                current_offset = int(now.utcoffset().total_seconds() / 3600)
-                if current_offset == offset_hours:
+                current_offset = round(now.utcoffset().total_seconds() / 3600)
+                if current_offset == rounded_offset:
                     return stored_tz
             except:
                 pass
         
         # Return mapped timezone or fallback to config
-        return offset_map.get(offset_hours, USER_TIMEZONE)
+        return offset_map.get(rounded_offset, USER_TIMEZONE)
     except Exception as e:
         print(f"Error deriving timezone: {e}")
         return None
