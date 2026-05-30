@@ -306,6 +306,14 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("✅ Dependencies checked.")
 
+        # Clear Python bytecode cache to ensure fresh code is loaded
+        import shutil
+        import pathlib
+        for pycache in pathlib.Path('/opt/coach').rglob('__pycache__'):
+            shutil.rmtree(pycache, ignore_errors=True)
+        for pyc in pathlib.Path('/opt/coach').rglob('*.pyc'):
+            pyc.unlink()
+
         # Restart the service - fire and forget
         subprocess.Popen(
             ["systemctl", "restart", "coach"],
@@ -780,6 +788,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     database.init_db()
+
+    # Store version at startup so we know what code is actually running
+    version.initialize_version()
 
     # Start the scheduler for automated jobs
     scheduler.start_scheduler()

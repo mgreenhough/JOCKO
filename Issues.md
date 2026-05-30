@@ -167,21 +167,62 @@ Committed 1348: 68af134
 
     Fix applied
     Updated payments.py
-    Enhanced _get_paypal_access_token() function with proper global variable updates
+    Changed from `from config import` to `import config` and access credentials via
+    config.PAYPAL_CLIENT_ID to ensure fresh values are always read.
     
     Root cause
-    The retry logic in issue 110.1 was reloading config but only updating local variables.
-    The module-level PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET variables were cached
-    from the original import and never updated, so subsequent API calls still used
-    the old credentials.
+    `from config import PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET` creates copies of the
+    values at import time. Reloading the config module didn't update these copies,
+    so the old credentials were still being used.
     
     What changed
-    - Added `global PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET` declaration
-    - On retry: Updates the global variables with fresh credentials from reloaded config
-    - Reconfigures the paypalrestsdk with the new credentials
-    - This ensures the SDK uses the updated credentials for all operations
+    - Changed to `import config` and access via config.PAYPAL_CLIENT_ID
+    - Reconfigure SDK with fresh credentials before every auth attempt
+    - Now reads directly from config module each time
     
     Verification
     python -m py_compile payments.py passed with no syntax errors
 
-Committed 1430: 5f64fb3
+Committed: f50e2ae
+
+110.3 [x] Version tracking bug: /status and /update show git version instead of running version
+
+    Fix applied
+    Updated version.py and main.py
+    
+    Root cause
+    version.py was reading from git on each call, showing what code SHOULD be running,
+    not what IS running. When bytecode cache caused stale code to execute, the version
+    lied and said it was up to date.
+    
+    What changed
+    - version.initialize_version() stores version at bot startup to .version file and DB
+    - get_running_version() reads the stored version, not git
+    - main.py calls version.initialize_version() at startup
+    - Now shows the ACTUAL running version
+    
+    Verification
+    python -m py_compile main.py version.py passed with no syntax errors
+
+111.1 [x] /update doesn't clear Python bytecode cache
+
+    Fix applied
+    Updated main.py cmd_update()
+    
+    Root cause
+    Python's __pycache__ and .pyc files weren't being invalidated, causing stale
+    code to run even after git pull.
+    
+    What changed
+    - Added bytecode cache clearing before service restart:
+      - Removes all __pycache__ directories
+      - Removes all .pyc files
+    - Ensures fresh code is loaded after update
+    
+    Verification
+    python -m py_compile main.py passed with no syntax errors
+
+Committed: <to be filled in>
+
+Recommitted 1446: f50e2ae
+Recommitted 1506: 
