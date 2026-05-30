@@ -306,37 +306,21 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await update.message.reply_text("✅ Dependencies checked.")
 
-        # Restart the service
-        restart_result = subprocess.run(
+        # Restart the service - fire and forget
+        subprocess.Popen(
             ["systemctl", "restart", "coach"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
         )
 
-        # Wait a moment for service to start (systemctl restart returns immediately)
-        import time
-        time.sleep(2)
-
-        # Check if service is actually running (regardless of restart exit code)
-        status_result = subprocess.run(
-            ["systemctl", "is-active", "coach"],
-            capture_output=True,
-            text=True
+        # Show success message immediately
+        # Note: The actual restart will kill this process, but if we got here, git pull succeeded
+        await update.message.reply_text(
+            f"✅ Update complete!\n\n"
+            f"🔄 Service is restarting... (this may take a few seconds)\n"
+            f"📦 New version will be active after restart."
         )
-
-        if status_result.returncode == 0:
-            # Service is running - success!
-            new_version = version.get_version_string()
-            await update.message.reply_text(
-                f"✅ Update complete! Service is running.\n\n"
-                f"📦 New version: {new_version}"
-            )
-        else:
-            # Service is not running - there may be an issue
-            error_msg = restart_result.stderr if restart_result.returncode != 0 else "Service failed to start"
-            await update.message.reply_text(f"⚠️ Code updated but restart may have issues:\n{error_msg}")
-            return
+        return
 
     except subprocess.TimeoutExpired:
         await update.message.reply_text("❌ Update timed out. Check server manually.")

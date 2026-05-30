@@ -1,14 +1,18 @@
 import paypalrestsdk
 import requests
-from config import PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_RECIPIENT_EMAIL, PENALTY_AMOUNT
+import config
 import database
+
+# Import constants that don't change
+PAYPAL_RECIPIENT_EMAIL = config.PAYPAL_RECIPIENT_EMAIL
+PENALTY_AMOUNT = config.PENALTY_AMOUNT
 
 # Configure PayPal SDK
 PAYPAL_MODE = "live"  # Changed from "sandbox" to "live" for production
 paypalrestsdk.configure({
     "mode": PAYPAL_MODE,
-    "client_id": PAYPAL_CLIENT_ID,
-    "client_secret": PAYPAL_CLIENT_SECRET
+    "client_id": config.PAYPAL_CLIENT_ID,
+    "client_secret": config.PAYPAL_CLIENT_SECRET
 })
 
 
@@ -22,38 +26,28 @@ def _get_paypal_access_token(retry=False):
     Get OAuth access token for PayPal API calls.
     Includes automatic retry with credentials refresh on auth failures.
     """
-    global PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET
-    
     base_url = _get_paypal_base_url()
 
-    # Determine which credentials to use
-    client_id = PAYPAL_CLIENT_ID
-    client_secret = PAYPAL_CLIENT_SECRET
-    
     # If retrying, attempt to reload config in case credentials were updated
     if retry:
         print("[payments] Retrying with fresh credentials...")
         try:
             import importlib
-            import config as config_module
-            importlib.reload(config_module)
-            
-            # Update global variables with fresh credentials
-            PAYPAL_CLIENT_ID = config_module.PAYPAL_CLIENT_ID
-            PAYPAL_CLIENT_SECRET = config_module.PAYPAL_CLIENT_SECRET
-            client_id = PAYPAL_CLIENT_ID
-            client_secret = PAYPAL_CLIENT_SECRET
-            
-            # Reconfigure the PayPal SDK with new credentials
-            paypalrestsdk.configure({
-                "mode": PAYPAL_MODE,
-                "client_id": PAYPAL_CLIENT_ID,
-                "client_secret": PAYPAL_CLIENT_SECRET
-            })
-            
-            print(f"[payments] Reloaded credentials - Client ID: {client_id[:8]}..." if client_id else "[payments] Client ID still empty after reload")
+            importlib.reload(config)
+            print(f"[payments] Reloaded config module - Client ID: {config.PAYPAL_CLIENT_ID[:8]}..." if config.PAYPAL_CLIENT_ID else "[payments] Client ID still empty after reload")
         except Exception as e:
             print(f"[payments] Failed to reload config: {e}")
+
+    # Always read fresh credentials from config module
+    client_id = config.PAYPAL_CLIENT_ID
+    client_secret = config.PAYPAL_CLIENT_SECRET
+    
+    # Reconfigure SDK with current credentials before every auth attempt
+    paypalrestsdk.configure({
+        "mode": PAYPAL_MODE,
+        "client_id": client_id,
+        "client_secret": client_secret
+    })
 
     try:
         response = requests.post(
@@ -283,8 +277,8 @@ def set_mode(mode):
     PAYPAL_MODE = mode
     paypalrestsdk.configure({
         "mode": PAYPAL_MODE,
-        "client_id": PAYPAL_CLIENT_ID,
-        "client_secret": PAYPAL_CLIENT_SECRET
+        "client_id": config.PAYPAL_CLIENT_ID,
+        "client_secret": config.PAYPAL_CLIENT_SECRET
     })
     print(f"[payments] PayPal mode set to: {mode}")
 
