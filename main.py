@@ -337,6 +337,37 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activate Jocko - penalties will start from next week."""
+    
+    # Check PayPal balance before allowing activation
+    penalty_amount = database.get_setting("penalty_amount") or "0"
+    try:
+        penalty_val = float(penalty_amount)
+    except ValueError:
+        penalty_val = 0
+    
+    if penalty_val > 0:
+        balance_check = payments.verify_sufficient_funds(penalty_val)
+        
+        if not balance_check["sufficient"]:
+            balance = balance_check.get("balance")
+            shortfall = balance_check.get("shortfall", penalty_val)
+            
+            balance_str = f"${balance:.2f}" if balance is not None else "Unknown"
+            shortfall_str = f"${shortfall:.2f}" if shortfall is not None else f"${penalty_val:.2f}"
+            
+            warning_msg = (
+                f"❌ **Cannot Activate: Insufficient PayPal Balance**\n\n"
+                f"You cannot activate Jocko until you have sufficient funds:\n"
+                f"• Available: {balance_str} AUD\n"
+                f"• Required: ${penalty_val:.2f} AUD\n"
+                f"• Shortfall: {shortfall_str} AUD\n\n"
+                f"Add funds to your PayPal account, then use /activate again.\n"
+                f"Use /balance to check your current balance."
+            )
+            await update.message.reply_text(warning_msg, parse_mode="Markdown")
+            return
+    
+    # Sufficient funds - proceed with activation
     database.set_setting("jocko_active", "1")
     database.set_setting("jocko_dormant", "0")  # Clear dormant flag on activation
     database.set_setting("jocko_stoic", "0")    # Clear stoic flag on activation
@@ -351,10 +382,16 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     database.set_setting("penalty_start_date", next_monday.isoformat())
 
+    balance_str = ""
+    if penalty_val > 0:
+        balance_check = payments.verify_sufficient_funds(penalty_val)
+        if balance_check.get("balance") is not None:
+            balance_str = f"\n💰 PayPal balance: ${balance_check['balance']:.2f} AUD (sufficient)\n"
+
     await update.message.reply_text(
         f"✅ **Jocko ACTIVATED**\n\n"
         f"Penalties will be enforced starting Monday ({next_monday}).\n"
-        f"Current week is a grace period - use it to get on track!\n\n"
+        f"Current week is a grace period - use it to get on track!{balance_str}\n"
         f"Send your commitments each evening:\n"
         f"• WAKE: 0600, GYM: 0700\n"
         f"• WAKE: NONE, GYM: REST (for rest days)",

@@ -124,6 +124,10 @@ def init_db():
         ("jocko_active", "1"),  # Default to active
         ("penalty_start_date", ""),  # Empty means no delay
         ("timezone", ""),  # IANA timezone name, empty until detected
+        ("jocko_dormant", "0"),  # Default to not dormant
+        ("jocko_stoic", "0"),  # Default to not stoic mode
+        ("jocko_paused", "0"),  # Default to not paused
+        ("jocko_paused_reason", ""),  # Empty means no pause reason
     ]
     for key, value in defaults:
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, value))

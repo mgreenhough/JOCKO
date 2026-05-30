@@ -506,12 +506,19 @@ def get_status():
 
     # Check activation status
     is_active = database.get_setting("jocko_active") == "1"
-    is_paused = database.get_setting("jocko_paused") == "1"
+    # Handle None values (settings not in DB yet) by using empty string fallback
+    is_dormant = (database.get_setting("jocko_dormant") or "") == "1"
+    is_stoic = (database.get_setting("jocko_stoic") or "") == "1"
+    is_paused = (database.get_setting("jocko_paused") or "") == "1"
     pause_reason = database.get_setting("jocko_paused_reason") or ""
     penalty_start = database.get_setting("penalty_start_date")
     status_extra = ""
 
-    if is_paused:
+    if is_dormant:
+        status_extra = "\n\n😴 Jocko is DORMANT - completely silent, use /activate to wake"
+    elif is_stoic:
+        status_extra = "\n\n📖 Jocko is in STOIC MODE - Daily Stoic only at 05:00"
+    elif is_paused:
         if pause_reason == "insufficient_funds":
             status_extra = "\n\n⏸️ **Jocko is PAUSED - Insufficient Funds**\nUse /revive after adding PayPal funds"
         else:

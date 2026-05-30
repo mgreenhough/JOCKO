@@ -225,4 +225,51 @@ Committed: f50e2ae
 Committed: <to be filled in>
 
 Recommitted 1446: f50e2ae
-Recommitted 1506: 
+Recommitted 1506: e0d3113
+
+112. [x] /status showing DEACTIVATED when in /stoic
+
+    Fix applied
+    Updated database.py and coach.py
+    
+    Root cause
+    The `jocko_stoic` setting (and related settings `jocko_dormant`, `jocko_paused`, 
+    `jocko_paused_reason`) were not added to the database defaults list in `init_db()`.
+    When `get_setting("jocko_stoic")` was called and the setting didn't exist in the 
+    database, it returned `None`, causing `is_stoic = database.get_setting("jocko_stoic") == "1"` 
+    to evaluate to `False`. This caused the status logic to fall through to the 
+    "DEACTIVATED" message instead of showing "STOIC MODE".
+    
+    What changed
+    database.py:
+    - Added `("jocko_dormant", "0")` to defaults list
+    - Added `("jocko_stoic", "0")` to defaults list  
+    - Added `("jocko_paused", "0")` to defaults list
+    - Added `("jocko_paused_reason", "")` to defaults list
+    
+    coach.py:
+    - Changed settings retrieval to handle None values (settings not in DB yet)
+    - Uses `(database.get_setting("jocko_stoic") or "") == "1"` pattern
+    - This ensures existing databases (without these settings) work correctly
+    - When setting is None, it defaults to empty string, then compares to "1"
+    - Result: None values are treated as False (disabled state)
+    
+    Note: /update does NOT rebuild the database - it only pulls code, updates 
+    dependencies, clears bytecode cache, and restarts. The init_db() uses 
+    INSERT OR IGNORE which only adds defaults for new databases. The None 
+    handling in coach.py ensures backward compatibility with existing databases.
+
+113. [x] /balance now works and calls out insufficient funds but still allows /activate to be activated
+
+    Fix applied
+    Updated main.py cmd_activate()
+    
+    What changed
+    - Added PayPal balance check at the start of cmd_activate()
+    - Uses payments.verify_sufficient_funds() to check if balance covers penalty amount
+    - If insufficient funds: shows error message with available/required/shortfall amounts
+    - Prevents activation until sufficient funds are added
+    - On successful activation (sufficient funds): shows PayPal balance in success message
+    
+    Verification
+    python -m py_compile main.py passed with no syntax errors
