@@ -479,7 +479,26 @@ Telegram reply
 | `/penalty 100` | Update penalty amount to $100 |
 | `/recipient` | Show current nominated recipient email |
 | `/recipient email@example.com` | Update recipient email |
+| `/activate` | Activate Jocko (penalties start next week) |
+| `/deactivate` | Deactivate penalties (messages still active) |
+| `/dormant` | Put Jocko to sleep (completely silent) |
+| `/stoic` | Stoic mode - Daily Stoic only at 05:00 (no penalties, no wake-ups) |
 | any other message | Routed to conversational coach |
+
+---
+
+## Modes: Active, Deactivated, Dormant, and Stoic
+
+Jocko has four operating modes:
+
+| Mode | Penalties | Wake-ups | Gym Check-ins | Daily Stoic | Other Messages |
+|---|---|---|---|---|---|
+| **Active** (`/activate`) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Deactivated** (`/deactivate`) | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes |
+| **Dormant** (`/dormant`) | ❌ No | ❌ No | ❌ No | ❌ No | ❌ No |
+| **Stoic** (`/stoic`) | ❌ No | ❌ No | ❌ No | ✅ Yes (05:00) | ❌ No |
+
+**Stoic Mode** is designed for users who want only the Daily Stoic passage delivered at 05:00 each morning, without any accountability features. It works regardless of PayPal balance and is perfect for those who just want the philosophical content.
 
 ---
 
@@ -494,6 +513,7 @@ The scheduler runs:
 - **Daily (evening)** — If no session logged and goal at risk and frequency ≥ 4, send warning
 - **Sunday evening** — Pre-week planning prompt
 - **Weekly (end)** — Evaluate goal compliance, trigger PayPal payment if missed, send report
+- **Daily (05:00)** — Daily Stoic passage (in Stoic mode only)
 
 ---
 

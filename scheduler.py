@@ -73,6 +73,31 @@ async def scheduled_wakeup():
         traceback.print_exc()
 
 
+async def send_daily_stoic():
+    """Send daily stoic entry at 05:00 - works in stoic mode regardless of PayPal balance."""
+    print(f"[scheduler] Daily Stoic job firing at {timezone.now_local().isoformat()} (local)")
+    try:
+        # Only run if in stoic mode
+        if database.get_setting("jocko_stoic") != "1":
+            return
+        
+        # Get today's stoic entry
+        import stoic
+        entry = stoic.get_todays_stoic()
+        
+        message = f"""📖 Daily Stoic: {entry['title']}
+
+"{entry['quote']}"
+— {entry['author']}
+
+💭 Reflection: {entry['reflection']}"""
+        
+        bot = Bot(token=TELEGRAM_BOT_TOKEN)
+        await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
+        print("[scheduler] Daily Stoic sent successfully")
+    except Exception as e:
+        print(f"[scheduler] Error sending daily stoic: {e}")
+
 async def scheduled_gym_checkin():
     """Dynamic gym check-in job - fires 120 min after committed gym time."""
     print(f"[scheduler] Gym check-in job firing at {timezone.now_local().isoformat()} (local)")
@@ -110,8 +135,16 @@ async def scheduled_gym_checkin():
         print("[scheduler] Pulling latest Garmin data before check-in...")
         try:
             import garmin
-            garmin.pull_activities()
-            print("[scheduler] Garmin data pulled successfully")
+            result = garmin.pull_activities()
+            if isinstance(result, tuple):
+                count, error = result
+            else:
+                count, error = result, None
+
+            if error:
+                print(f"[scheduler] Warning: Failed to pull Garmin data: {error}")
+            else:
+                print(f"[scheduler] Garmin data pulled successfully ({count} activities)")
         except Exception as pull_error:
             print(f"[scheduler] Warning: Failed to pull Garmin data: {pull_error}")
 
@@ -246,6 +279,13 @@ async def send_weekly_report():
     """Generate and send weekly report via Telegram."""
     print(f"[scheduler] Sending weekly report at {timezone.now_local().isoformat()}")
     try:
+        if database.get_setting("jocko_dormant") == "1":
+            print("[scheduler] Jocko is dormant - skipping weekly report")
+            return
+        if database.get_setting("jocko_active") != "1":
+            print("[scheduler] Jocko is deactivated - skipping weekly report")
+            return
+
         report = coach.generate_weekly_report()
         bot = Bot(token=TELEGRAM_BOT_TOKEN)
         await bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=report)
@@ -803,6 +843,15 @@ def start_scheduler():
         trigger=CronTrigger(hour=20, minute=0),
         id="evening_commitment_prompt",
         name="Evening Commitment Prompt",
+        replace_existing=True
+    )
+    
+    # Daily Stoic: daily at 5:00 AM (works in stoic mode regardless of PayPal balance)
+    scheduler.add_job(
+        send_daily_stoic,
+        trigger=CronTrigger(hour=5, minute=0),
+        id="daily_stoic",
+        name="Daily Stoic",
         replace_existing=True
     )
 

@@ -100,8 +100,97 @@ REMEMBER: EXACTLY 2 SENTENCES. Count them."""
 
     return response.choices[0].message.content.strip()
 
+def generate_commitment_confirmation(intensity: int, wakeup_time: str, gym_time: str) -> str:
+    """Generate a dynamic Jocko-like confirmation comment when user locks in their daily commitment."""
+    is_rest_day = (wakeup_time == "NONE" and gym_time == "REST")
+    is_wake_only = (wakeup_time != "NONE" and wakeup_time is not None and (gym_time == "REST" or gym_time is None))
+    is_gym_only = ((wakeup_time == "NONE" or wakeup_time is None) and gym_time != "REST" and gym_time is not None)
+    
+    system_prompt = _base_persona_prompt(intensity) + """
+
+RULES:
+- You MUST use EXACTLY 1 sentence. No more!
+- Be punchy, direct, and authentic to the Jocko persona.
+- Vary your phrasing naturally.
+- Acknowledge the specific commitment they've made."""
+    
+    if is_rest_day:
+        prompt = """The user has committed to a full rest day tomorrow (no wake-up alarm, no gym session).
+Acknowledge this recovery commitment with appropriate intensity.
+Emphasize that recovery is part of the discipline but if intensity level is >5, DON'T let them make it an excuse.
+
+REMEMBER: 1 SENTENCE maximum."""
+    elif is_wake_only:
+        prompt = f"""The user has committed to waking up at {wakeup_time} tomorrow with no gym session.
+Acknowledge this wake-up commitment with appropriate intensity.
+At high intensity, challenge them to attack the morning.
+At low intensity, encourage them to start the day well.
+
+REMEMBER: 1 SENTENCE maximum."""
+    elif is_gym_only:
+        prompt = f"""The user has committed to a gym session at {gym_time} tomorrow with no wake-up alarm.
+Acknowledge this training commitment with appropriate intensity.
+At high intensity, demand they bring intensity to the session.
+At low intensity, encourage them to have a good workout.
+
+REMEMBER: 1 SENTENCE maximum."""
+    else:
+        prompt = f"""The user has committed to waking up at {wakeup_time} and training at {gym_time} tomorrow.
+Acknowledge this full commitment with appropriate intensity.
+At high intensity, this is a challenge to execute with discipline.
+At low intensity, this is warm encouragement to follow through.
+
+REMEMBER: 1 SENTENCE maximum."""
+
+    try:
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"[coach] Error generating commitment confirmation: {e}")
+        # Fallback responses - randomize to avoid static repetition
+        import random
+        if is_rest_day:
+            fallbacks = [
+                "Rest day locked in. Recover hard.",
+                "Recovery is part of the discipline.",
+                "Rest today, dominate tomorrow.",
+                "Full rest day. Make it count.",
+                "Recovery mode engaged."
+            ]
+        elif intensity >= 8:
+            fallbacks = [
+                "Your enemy is moving. Stay sharp.",
+                "Discipline equals freedom. Execute.",
+                "Get after it tomorrow. No excuses.",
+                "Locked in. Now deliver.",
+                "Commitment made. Honor it."
+            ]
+        elif intensity >= 5:
+            fallbacks = [
+                "Locked in. I'll be checking.",
+                "Commitment noted. Follow through.",
+                "Tomorrow's plan is set. Execute.",
+                "You know the plan. Stick to it.",
+                "Commitment made. Make it happen."
+            ]
+        else:
+            fallbacks = [
+                "All set for tomorrow!",
+                "Got it. I'll remind you.",
+                "Plan is locked in.",
+                "Looking forward to tomorrow!",
+                "All ready for your day."
+            ]
+        return random.choice(fallbacks)
+
 def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) -> bool:
-    """Check if a gym session exists within the window after gym_time."""
+    """Check if a gym session exists within the allowed window around gym_time."""
     try:
         # Get current time in local timezone
         now_local = timezone.now_local()
@@ -117,8 +206,9 @@ def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) ->
             # Handle HHMM format
             gym_time = datetime.strptime(gym_time_str, "%H%M").time()
 
-        # Create timezone-aware datetime for gym time
+        # Create timezone-aware datetime for gym time and allow any earlier activity on the same day
         gym_datetime = datetime.combine(today, gym_time).replace(tzinfo=timezone.get_user_timezone())
+        window_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=timezone.get_user_timezone())
         window_end = gym_datetime + timedelta(minutes=window_minutes)
 
         # Get today's activities - query using UTC times
@@ -138,7 +228,7 @@ def check_gym_session_in_window(gym_time_str: str, window_minutes: int = 120) ->
                 activity_start_utc = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
                 activity_start_local = timezone.to_local(activity_start_utc)
 
-                if gym_datetime <= activity_start_local <= window_end:
+                if window_start <= activity_start_local <= window_end:
                     return True
             except:
                 continue

@@ -334,6 +334,7 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activate Jocko - penalties will start from next week."""
     database.set_setting("jocko_active", "1")
     database.set_setting("jocko_dormant", "0")  # Clear dormant flag on activation
+    database.set_setting("jocko_stoic", "0")    # Clear stoic flag on activation
 
     # Calculate next Monday for penalty start
     from datetime import timedelta
@@ -372,6 +373,7 @@ async def cmd_dormant(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Put Jocko in dormant mode - completely silent, no messages at all."""
     database.set_setting("jocko_active", "0")
     database.set_setting("jocko_dormant", "1")
+    database.set_setting("jocko_stoic", "0")
     database.set_setting("jocko_paused", "0")
     database.set_setting("jocko_paused_reason", "")
     database.set_setting("penalty_start_date", "")
@@ -380,6 +382,21 @@ async def cmd_dormant(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "No messages, no reminders, no check-ins.\n"
         "Complete silence until you reactivate.\n\n"
         "Use /activate to wake Jocko up when you're ready.",
+        parse_mode="Markdown"
+    )
+
+async def cmd_stoic(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Stoic mode - like deactivate but automatically sends Daily Stoic at 05:00 daily."""
+    database.set_setting("jocko_active", "0")
+    database.set_setting("jocko_dormant", "0")
+    database.set_setting("jocko_stoic", "1")
+    database.set_setting("penalty_start_date", "")
+    await update.message.reply_text(
+        "📖 **Jocko is now in STOIC MODE**\n\n"
+        "No penalties, no wake-up messages, no gym check-ins.\n"
+        "Only the Daily Stoic installment delivered at 05:00 each morning.\n"
+        "Works regardless of PayPal balance.\n\n"
+        "Use /activate to fully wake Jocko up when you're ready.",
         parse_mode="Markdown"
     )
 
@@ -656,8 +673,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wakeup_time, gym_time = parse_commitment(user_message)
 
         # Check if this is a valid commitment message (has WAKE or GYM keywords)
+        # Must match as word boundaries to avoid false positives (e.g., "STATUS" contains "WAKE")
         text_upper = user_message.upper().strip()
-        is_commitment = 'WAKE' in text_upper or 'GYM' in text_upper
+        is_commitment = bool(re.search(r'\b(WAKE|GYM)\b', text_upper))
 
         if is_commitment:
             # This is a commitment message - save it
@@ -699,18 +717,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             reply = f"✅ LOCKED IN for tomorrow ({tomorrow}):\n" + "\n".join(response_parts)
 
-            # Add intensity-based confirmation
+            # Generate dynamic Jocko-like commitment confirmation
             intensity = int(database.get_setting("intensity") or 5)
-
-            # Special message for full rest day
-            if wakeup_time == "NONE" and gym_time == "REST":
-                reply += "\n\nFull rest day. Recover well."
-            elif intensity >= 8:
-                reply += "\n\nYour enemy is moving. Stay sharp and focused."
-            elif intensity >= 5:
-                reply += "\n\nCommitted. I'll check in soon."
-            else:
-                reply += "\n\nGreat! I'll remind you when it's time."
+            commitment_comment = coach.generate_commitment_confirmation(intensity, wakeup_time, gym_time)
+            reply += f"\n\n{commitment_comment}"
 
             await update.message.reply_text(reply)
             print(f"[main] Commitment saved: wake={wakeup_time}, gym={gym_time}")
@@ -751,6 +761,7 @@ def main():
     app.add_handler(CommandHandler("activate",  cmd_activate))
     app.add_handler(CommandHandler("deactivate", cmd_deactivate))
     app.add_handler(CommandHandler("dormant",   cmd_dormant))
+    app.add_handler(CommandHandler("stoic",     cmd_stoic))
     app.add_handler(CommandHandler("revive",    cmd_revive))
     app.add_handler(CommandHandler("timezone",  cmd_timezone))
     app.add_handler(CommandHandler("debug",     cmd_debug))

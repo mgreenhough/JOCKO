@@ -42,12 +42,12 @@ def derive_timezone_from_garmin(local_time_str: str, gmt_time_str: str) -> Optio
         local = datetime.fromisoformat(local_time_str.replace('Z', '+00:00'))
         gmt = datetime.fromisoformat(gmt_time_str.replace('Z', '+00:00'))
         
-        # Calculate offset in hours
-        offset_hours = int((local - gmt).total_seconds() / 3600)
+        # Calculate offset in hours (keep full precision, don't truncate)
+        offset_hours = (local - gmt).total_seconds() / 3600
         
         # Map offset to common IANA timezones
         # Offset is local - UTC (e.g., Adelaide UTC+9:30 = +9.5, Sydney UTC+10 = +10)
-        # Note: Using rounded values since int() truncates
+        # Support both integer and half-hour offsets
         offset_map = {
             -10: "Pacific/Honolulu",
             -9: "America/Anchorage",
@@ -56,26 +56,30 @@ def derive_timezone_from_garmin(local_time_str: str, gmt_time_str: str) -> Optio
             -6: "America/Chicago",
             -5: "America/New_York",
             0: "UTC",
+            5.5: "Asia/Kolkata",       # India
             8: "Asia/Shanghai",
             9: "Asia/Tokyo",
+            9.5: "Australia/Adelaide", # ACST
             10: "Australia/Brisbane",  # AEST
+            10.5: "Australia/Adelaide", # ACDT during daylight saving
             11: "Australia/Sydney",    # AEDT during daylight saving
             12: "Pacific/Auckland",    # NZDT
+            12.5: "Pacific/Chatham",   # Chatham Islands
             13: "Pacific/Auckland",
         }
 
-        # Round offset to nearest hour for mapping
-        rounded_offset = round(offset_hours)
+        # Round to nearest 0.5 hour for mapping
+        rounded_offset = round(offset_hours * 2) / 2
         
         # Try to get stored timezone first to maintain consistency
         stored_tz = database.get_setting("timezone")
         if stored_tz:
-            # Verify the stored timezone matches the offset
+            # Verify the stored timezone matches the offset (within 0.5 hour tolerance)
             try:
                 tz = ZoneInfo(stored_tz)
                 now = datetime.now(tz)
-                current_offset = round(now.utcoffset().total_seconds() / 3600)
-                if current_offset == rounded_offset:
+                current_offset = now.utcoffset().total_seconds() / 3600
+                if abs(current_offset - rounded_offset) <= 0.5:
                     return stored_tz
             except:
                 pass

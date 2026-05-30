@@ -41,16 +41,31 @@ def _get_client():
 def get_last_error():
     return _last_error
 
-def _map_activity_type(atype):
-    """Map Garmin activity type to our simplified types."""
+def _map_activity_type(atype, activity_name=""):
+    """Map Garmin activity type to our simplified types.
+    
+    Also checks activity_name for custom workouts like REHIT/HIIT that may be
+    categorized as 'cardio' type but are actually sprint sessions.
+    """
     atype_lower = atype.lower()
+    name_lower = activity_name.lower()
+    
+    # Check activity type first
     if any(x in atype_lower for x in ["sprint", "run", "running"]):
         return "sprint"
     elif any(x in atype_lower for x in ["strength", "weight", "weights", "crossfit", "hiit"]):
         return "strength"
     elif any(x in atype_lower for x in ["cardio", "elliptical", "rowing", "indoor"]):
+        # Before defaulting to cardio, check if this is actually a sprint workout by name
+        sprint_keywords = ["rehit", "hiit", "sprint", "intervals", "tabata"]
+        if any(keyword in name_lower for keyword in sprint_keywords):
+            return "sprint"
         return "cardio"
     else:
+        # For unknown types, check name for sprint indicators
+        sprint_keywords = ["rehit", "hiit", "sprint", "intervals", "tabata"]
+        if any(keyword in name_lower for keyword in sprint_keywords):
+            return "sprint"
         return "other"
 
 def pull_activities(days=14):
@@ -137,7 +152,7 @@ def pull_activities(days=14):
 
             # Map activity type
             try:
-                mapped_type = _map_activity_type(atype)
+                mapped_type = _map_activity_type(atype, name)
             except Exception as e:
                 print(f"[garmin] Error mapping activity type '{atype}': {e}")
                 import traceback
