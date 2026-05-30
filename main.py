@@ -12,6 +12,8 @@ import goals
 import scheduler
 import config
 import timezone
+import version
+import payments
 from config import TELEGRAM_BOT_TOKEN
 
 logging.basicConfig(level=logging.INFO)
@@ -115,6 +117,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 **Penalty Settings:**
 /penalty [amount] - Set penalty amount in AUD
 /recipient [email] - Set penalty recipient email
+/balance - Check current PayPal balance
 
 **Data & Control:**
 /pull - Pull latest Garmin data manually
@@ -122,6 +125,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /activate - Activate Jocko (penalties start next week or wake from dormant)
 /deactivate - Deactivate penalties (messages still active)
 /dormant - Put Jocko to sleep (completely silent)
+/stoic - Stoic mode (Daily Stoic only at 05:00)
 /revive - Resume Jocko after adding PayPal funds (when paused)
 /debug - Show debug info for troubleshooting
 /testwake - Test wake-up message (10 second delay)
@@ -323,7 +327,12 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"⚠️ Code updated but restart may have issues:\n{restart_result.stderr}")
             return
 
-        await update.message.reply_text("✅ Service restarted successfully. Update complete!")
+        # Get new version after update
+        new_version = version.get_version_string()
+        await update.message.reply_text(
+            f"✅ Service restarted successfully. Update complete!\n\n"
+            f"📦 New version: {new_version}"
+        )
 
     except subprocess.TimeoutExpired:
         await update.message.reply_text("❌ Update timed out. Check server manually.")
@@ -399,6 +408,48 @@ async def cmd_stoic(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use /activate to fully wake Jocko up when you're ready.",
         parse_mode="Markdown"
     )
+
+async def cmd_balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Check current PayPal balance."""
+    await update.message.reply_text("🔄 Checking PayPal balance...")
+    
+    balance_check = payments.check_paypal_balance()
+    
+    if balance_check["success"]:
+        balance = balance_check["balance"]
+        currency = balance_check["currency"]
+        
+        # Also check penalty amount for context
+        penalty_amount = database.get_setting("penalty_amount") or "0"
+        try:
+            penalty_val = float(penalty_amount)
+        except ValueError:
+            penalty_val = 0
+        
+        # Format message
+        msg = f"💰 **PayPal Balance:** ${balance:.2f} {currency}\n\n"
+        
+        if penalty_val > 0:
+            if balance >= penalty_val:
+                msg += f"✅ Sufficient funds for penalty (${penalty_val:.2f} {currency})"
+            else:
+                shortfall = penalty_val - balance
+                msg += f"⚠️ **Insufficient funds!**\n"
+                msg += f"• Penalty amount: ${penalty_val:.2f} {currency}\n"
+                msg += f"• Shortfall: ${shortfall:.2f} {currency}\n\n"
+                msg += f"Use /revive after adding funds."
+        else:
+            msg += f"Penalty amount: Not set"
+        
+        await update.message.reply_text(msg, parse_mode="Markdown")
+    else:
+        error = balance_check.get("error", "Unknown error")
+        await update.message.reply_text(
+            f"❌ **Failed to check PayPal balance**\n\n"
+            f"Error: {error}\n\n"
+            f"Please check your PayPal credentials.",
+            parse_mode="Markdown"
+        )
 
 async def cmd_revive(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Revive Jocko after adding funds - checks balance and resumes if sufficient."""
@@ -755,6 +806,7 @@ def main():
     app.add_handler(CommandHandler("frequency", cmd_frequency))
     app.add_handler(CommandHandler("penalty",   cmd_penalty))
     app.add_handler(CommandHandler("recipient", cmd_recipient))
+    app.add_handler(CommandHandler("balance",   cmd_balance))
     app.add_handler(CommandHandler("pull",      cmd_pull))
     app.add_handler(CommandHandler("update",    cmd_update))
     app.add_handler(CommandHandler("commands",  cmd_commands))

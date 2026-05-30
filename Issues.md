@@ -92,3 +92,36 @@ Committed 30/05/26 1238: f5bf1bf
     without manual intervention. Only MFA challenges require local authentication.
     Verification
     python -m py_compile garmin.py passed with no syntax errors
+
+Committed 1257: 2a1252a
+
+109. [x] Add version number somewhere (use GIT short message number (2a1252a)) and have it displayed in /status and after /update is called so user knows update has been successfull and which version
+
+    Fix applied
+    Created version.py utility module and updated coach.py and main.py
+    What changed
+    - Created version.py with get_git_version() and get_version_string() functions
+    - version.py reads git commit hash dynamically using git rev-parse --short HEAD
+    - Falls back to .version file or 'unknown' if git not available
+    - Updated coach.get_status() to display version: "📦 Version: v2a1252a"
+    - Updated main.cmd_update() to display new version after successful update
+    - Both /status and /update now show the current git commit hash
+    
+    Version format: "v{short_hash}" (e.g., "v2a1252a")
+    Verification
+    python -m py_compile version.py coach.py main.py passed with no syntax errors
+
+110. [x] Add /balance to pull current PayPal ballance. Function should already exist because program uses it to check balance.
+
+    Fix applied
+    Updated main.py to add /balance command
+    What changed
+    - Added `import payments` at the top of main.py
+    - Created cmd_balance() function that calls payments.check_paypal_balance()
+    - Displays current PayPal balance with 2 decimal places
+    - Compares balance against penalty amount to show sufficiency status
+    - Shows warning if insufficient funds with shortfall amount
+    - Added /balance to the /commands list under "Penalty Settings"
+    - Registered the CommandHandler for /balance
+    Verification
+    python -m py_compile main.py passed with no syntax errors

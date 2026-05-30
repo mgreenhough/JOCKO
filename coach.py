@@ -5,6 +5,7 @@ import goals
 from config import OPENAI_API_KEY, CONVERSATION_HISTORY_LIMIT, OPENAI_MODEL
 import stoic
 import timezone
+import version
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -522,10 +523,14 @@ def get_status():
     else:
         status_extra = "\n\n🟢 Jocko is ACTIVE - Penalties enabled"
 
+    # Get version info
+    version_str = version.get_version_string()
+
     status = f"Week starting {this_week}\n{compliance}\n{trend_line}\n{fatigue_line}"
     if bb_line:
         status += f"\n{bb_line}"
     status += status_extra
+    status += f"\n\n📦 Version: {version_str}"
     return status
 
 def check_goal_compliance():
