@@ -41,7 +41,8 @@ def _get_client():
             is_auth_error = any(keyword in error_str for keyword in [
                 "auth", "authentication", "login", "credential", "unauthorized", 
                 "403", "401", "forbidden", "invalid", "expired", "token", "mfa",
-                "multi-factor", "two-step", "2fa", "verification", "challenge"
+                "multi-factor", "two-step", "2fa", "verification", "challenge",
+                "social profile", "profile", "retrieve", "session"
             ])
             
             if is_auth_error:

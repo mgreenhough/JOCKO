@@ -273,3 +273,29 @@ Recommitted 1506: e0d3113
     
     Verification
     python -m py_compile main.py passed with no syntax errors
+
+Committed 1742: 46cea05
+
+114. [x] /pull failed. auth error: "failed to retrieve social profile"?
+
+    Fix applied
+    Updated garmin.py
+    Enhanced auth error detection to recognize "social profile" errors
+    
+    What changed
+    - Added "social profile", "profile", "retrieve", and "session" to the auth error 
+      keyword list in _get_client()
+    - Now catches "failed to retrieve social profile" errors and triggers automatic
+      token clearing and re-authentication
+    - This follows the same pattern as issue 108 fix - automatic recovery from auth
+      failures without manual intervention
+    
+    Root cause
+    The auth error detection was missing keywords for "social profile" related errors,
+    causing these specific Garmin authentication failures to bypass the automatic
+    token recovery mechanism.
+    
+    Verification
+    python -m py_compile garmin.py passed with no syntax errors
+
+    Committed 
