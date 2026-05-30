@@ -69,3 +69,26 @@
     - Updated README.md with new /stoic command and operating modes table
     Verification
     python -m py_compile main.py scheduler.py passed with no syntax errors
+
+Committed 30/05/26 1238: f5bf1bf
+
+108. [x] /pull failed: garmin connect Auth error.
+
+    Fix applied
+    Updated garmin.py
+    Enhanced _get_client() function with automatic token recovery and re-authentication
+    What changed
+    Added intelligent auth error detection that checks for keywords like:
+    - auth, authentication, login, credential, unauthorized
+    - HTTP 403/401, forbidden, invalid, expired, token, mfa, 2fa
+    
+    When an auth error is detected:
+    1. Automatically clears the token store (~/.garminconnect)
+    2. Attempts fresh login with stored credentials on the server
+    3. If successful: generates new tokens and continues normally
+    4. Only if MFA is required: provides instructions for manual token generation
+    
+    This means the server can now automatically recover from most auth failures
+    without manual intervention. Only MFA challenges require local authentication.
+    Verification
+    python -m py_compile garmin.py passed with no syntax errors

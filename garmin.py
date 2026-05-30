@@ -35,6 +35,59 @@ def _get_client():
             _last_error = f"{type(e).__name__}: {str(e)}"
             print(f"[garmin] Login failed: {e}")
             print(f"[garmin] Error type: {type(e).__name__}")
+            
+            # Check if this is an auth error and clear tokens to force re-authentication
+            error_str = str(e).lower()
+            is_auth_error = any(keyword in error_str for keyword in [
+                "auth", "authentication", "login", "credential", "unauthorized", 
+                "403", "401", "forbidden", "invalid", "expired", "token", "mfa",
+                "multi-factor", "two-step", "2fa", "verification", "challenge"
+            ])
+            
+            if is_auth_error:
+                print(f"[garmin] Authentication error detected - clearing tokens and attempting fresh login")
+                try:
+                    # Clear the token store to force fresh login
+                    if os.path.exists(tokenstore):
+                        import shutil
+                        shutil.rmtree(tokenstore)
+                        os.makedirs(tokenstore, exist_ok=True)
+                        print(f"[garmin] Token store cleared: {tokenstore}")
+                    
+                    # Attempt fresh login with credentials
+                    print(f"[garmin] Attempting fresh login with stored credentials...")
+                    client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+                    client.login(tokenstore)
+                    _client = client
+                    print("[garmin] Fresh login successful - new tokens generated")
+                    _last_error = None
+                    return _client
+                    
+                except Exception as fresh_login_error:
+                    print(f"[garmin] Fresh login also failed: {fresh_login_error}")
+                    print(f"[garmin] Error type: {type(fresh_login_error).__name__}")
+                    
+                    # Check if this is an MFA/challenge error
+                    fresh_error_str = str(fresh_login_error).lower()
+                    needs_mfa = any(keyword in fresh_error_str for keyword in [
+                        "mfa", "multi-factor", "two-step", "2fa", "verification",
+                        "challenge", "code", "enter", "prompt", "input"
+                    ])
+                    
+                    if needs_mfa:
+                        _last_error = (
+                            f"Garmin Connect requires multi-factor authentication (MFA). "
+                            f"Please run 'python get_garmin_tokens.py' locally to complete MFA, "
+                            f"then copy tokens to the server with: "
+                            f"scp ~/.garminconnect/* root@203.57.51.49:~/.garminconnect/"
+                        )
+                    else:
+                        _last_error = (
+                            f"Garmin Connect authentication failed. Error: {fresh_login_error}. "
+                            f"If this persists, try running 'python get_garmin_tokens.py' locally "
+                            f"and copying tokens to the server."
+                        )
+            
             return None
     return _client
 
