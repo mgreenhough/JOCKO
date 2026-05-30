@@ -314,25 +314,29 @@ async def cmd_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
             timeout=30
         )
 
-        if restart_result.returncode != 0:
-            # Check if service is actually running despite the error
-            status_result = subprocess.run(
-                ["systemctl", "is-active", "coach"],
-                capture_output=True,
-                text=True
-            )
-            if status_result.returncode == 0:
-                await update.message.reply_text("✅ Update complete! Service is running.")
-            else:
-                await update.message.reply_text(f"⚠️ Code updated but restart may have issues:\n{restart_result.stderr}")
-            return
+        # Wait a moment for service to start (systemctl restart returns immediately)
+        import time
+        time.sleep(2)
 
-        # Get new version after update
-        new_version = version.get_version_string()
-        await update.message.reply_text(
-            f"✅ Service restarted successfully. Update complete!\n\n"
-            f"📦 New version: {new_version}"
+        # Check if service is actually running (regardless of restart exit code)
+        status_result = subprocess.run(
+            ["systemctl", "is-active", "coach"],
+            capture_output=True,
+            text=True
         )
+
+        if status_result.returncode == 0:
+            # Service is running - success!
+            new_version = version.get_version_string()
+            await update.message.reply_text(
+                f"✅ Update complete! Service is running.\n\n"
+                f"📦 New version: {new_version}"
+            )
+        else:
+            # Service is not running - there may be an issue
+            error_msg = restart_result.stderr if restart_result.returncode != 0 else "Service failed to start"
+            await update.message.reply_text(f"⚠️ Code updated but restart may have issues:\n{error_msg}")
+            return
 
     except subprocess.TimeoutExpired:
         await update.message.reply_text("❌ Update timed out. Check server manually.")

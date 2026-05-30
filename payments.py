@@ -22,6 +22,8 @@ def _get_paypal_access_token(retry=False):
     Get OAuth access token for PayPal API calls.
     Includes automatic retry with credentials refresh on auth failures.
     """
+    global PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET
+    
     base_url = _get_paypal_base_url()
 
     # Determine which credentials to use
@@ -35,8 +37,20 @@ def _get_paypal_access_token(retry=False):
             import importlib
             import config as config_module
             importlib.reload(config_module)
-            client_id = config_module.PAYPAL_CLIENT_ID
-            client_secret = config_module.PAYPAL_CLIENT_SECRET
+            
+            # Update global variables with fresh credentials
+            PAYPAL_CLIENT_ID = config_module.PAYPAL_CLIENT_ID
+            PAYPAL_CLIENT_SECRET = config_module.PAYPAL_CLIENT_SECRET
+            client_id = PAYPAL_CLIENT_ID
+            client_secret = PAYPAL_CLIENT_SECRET
+            
+            # Reconfigure the PayPal SDK with new credentials
+            paypalrestsdk.configure({
+                "mode": PAYPAL_MODE,
+                "client_id": PAYPAL_CLIENT_ID,
+                "client_secret": PAYPAL_CLIENT_SECRET
+            })
+            
             print(f"[payments] Reloaded credentials - Client ID: {client_id[:8]}..." if client_id else "[payments] Client ID still empty after reload")
         except Exception as e:
             print(f"[payments] Failed to reload config: {e}")

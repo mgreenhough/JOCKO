@@ -144,3 +144,44 @@ Committed 1335: 427b627
     - Similar pattern to garmin.py issue 108 fix but adapted for PayPal OAuth flow
     Verification
     python -m py_compile payments.py passed with no syntax errors
+
+Committed 1348: 68af134
+
+111. [x] On /update it ALWAYS say !Code updated but restart may have issues.
+
+    Fix applied
+    Updated main.py
+    What changed
+    The issue was that systemctl restart returns immediately before the service has actually started.
+    Fixed by adding a 2-second delay after restart, then checking if the service is actually active.
+    Now only shows the warning if the service is genuinely not running after the restart attempt.
+    Changed logic to:
+    - Always check service status after restart (not just when restart command fails)
+    - Wait 2 seconds for service to start before checking
+    - Only show warning if service status confirms it's not running
+    - Show success message with new version when service is confirmed running
+    Verification
+    python -m py_compile main.py passed with no syntax errors
+
+110.2 [x] /balance failed and produced EXACTLY the same error!?
+
+    Fix applied
+    Updated payments.py
+    Enhanced _get_paypal_access_token() function with proper global variable updates
+    
+    Root cause
+    The retry logic in issue 110.1 was reloading config but only updating local variables.
+    The module-level PAYPAL_CLIENT_ID and PAYPAL_CLIENT_SECRET variables were cached
+    from the original import and never updated, so subsequent API calls still used
+    the old credentials.
+    
+    What changed
+    - Added `global PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET` declaration
+    - On retry: Updates the global variables with fresh credentials from reloaded config
+    - Reconfigures the paypalrestsdk with the new credentials
+    - This ensures the SDK uses the updated credentials for all operations
+    
+    Verification
+    python -m py_compile payments.py passed with no syntax errors
+
+Committed: <to be filled in>
