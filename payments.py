@@ -17,21 +17,65 @@ def _get_paypal_base_url():
     return "https://api-m.paypal.com" if PAYPAL_MODE == "live" else "https://api-m.sandbox.paypal.com"
 
 
-def _get_paypal_access_token():
-    """Get OAuth access token for PayPal API calls."""
+def _get_paypal_access_token(retry=False):
+    """
+    Get OAuth access token for PayPal API calls.
+    Includes automatic retry with credentials refresh on auth failures.
+    """
     base_url = _get_paypal_base_url()
 
-    response = requests.post(
-        f"{base_url}/v1/oauth2/token",
-        headers={"Accept": "application/json", "Accept-Language": "en_US"},
-        auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET),
-        data={"grant_type": "client_credentials"}
-    )
+    # Determine which credentials to use
+    client_id = PAYPAL_CLIENT_ID
+    client_secret = PAYPAL_CLIENT_SECRET
+    
+    # If retrying, attempt to reload config in case credentials were updated
+    if retry:
+        print("[payments] Retrying with fresh credentials...")
+        try:
+            import importlib
+            import config as config_module
+            importlib.reload(config_module)
+            client_id = config_module.PAYPAL_CLIENT_ID
+            client_secret = config_module.PAYPAL_CLIENT_SECRET
+            print(f"[payments] Reloaded credentials - Client ID: {client_id[:8]}..." if client_id else "[payments] Client ID still empty after reload")
+        except Exception as e:
+            print(f"[payments] Failed to reload config: {e}")
 
-    if response.status_code == 200:
-        return response.json().get("access_token")
-    else:
+    try:
+        response = requests.post(
+            f"{base_url}/v1/oauth2/token",
+            headers={"Accept": "application/json", "Accept-Language": "en_US"},
+            auth=(client_id, client_secret),
+            data={"grant_type": "client_credentials"}
+        )
+
+        if response.status_code == 200:
+            return response.json().get("access_token")
+        
+        # Check for authentication errors
+        error_text = response.text.lower()
+        is_auth_error = any(keyword in error_text for keyword in [
+            "invalid_client", "unauthorized", "authentication", "auth",
+            "invalid credentials", "401", "403"
+        ])
+        
+        if is_auth_error and not retry:
+            print(f"[payments] Authentication error detected: {response.text}")
+            print(f"[payments] Attempting automatic recovery...")
+            # Retry once with fresh credentials
+            return _get_paypal_access_token(retry=True)
+        
         print(f"[payments] Failed to get access token: {response.text}")
+        return None
+        
+    except requests.exceptions.RequestException as e:
+        print(f"[payments] Request exception getting access token: {e}")
+        if not retry:
+            print("[payments] Attempting retry after request exception...")
+            return _get_paypal_access_token(retry=True)
+        return None
+    except Exception as e:
+        print(f"[payments] Exception getting access token: {e}")
         return None
 
 

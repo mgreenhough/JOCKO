@@ -118,6 +118,7 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /penalty [amount] - Set penalty amount in AUD
 /recipient [email] - Set penalty recipient email
 /balance - Check current PayPal balance
+/revive - Revive Jocko after adding funds (if paused due to insufficient balance)
 
 **Data & Control:**
 /pull - Pull latest Garmin data manually
@@ -126,7 +127,6 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /deactivate - Deactivate penalties (messages still active)
 /dormant - Put Jocko to sleep (completely silent)
 /stoic - Stoic mode (Daily Stoic only at 05:00)
-/revive - Resume Jocko after adding PayPal funds (when paused)
 /debug - Show debug info for troubleshooting
 /testwake - Test wake-up message (10 second delay)
 

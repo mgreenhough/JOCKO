@@ -125,3 +125,22 @@ Committed 1257: 2a1252a
     - Registered the CommandHandler for /balance
     Verification
     python -m py_compile main.py passed with no syntax errors
+
+Committed 1335: 427b627
+
+110.1 [x] /balance failed: couldn't auth with paypal. can we add auto recovery similar to the fix for issue 108.
+
+    Fix applied
+    Updated payments.py
+    Enhanced _get_paypal_access_token() function with automatic retry and credential refresh
+    What changed
+    - Added retry parameter to _get_paypal_access_token() for automatic recovery
+    - When authentication error detected (invalid_client, unauthorized, 401, 403, etc.):
+      1. Reloads config module to get fresh credentials
+      2. Retries the API call once with new credentials
+      3. If still failing, returns appropriate error message
+    - Also retries on request exceptions (network issues)
+    - Enhanced error logging to track retry attempts
+    - Similar pattern to garmin.py issue 108 fix but adapted for PayPal OAuth flow
+    Verification
+    python -m py_compile payments.py passed with no syntax errors
