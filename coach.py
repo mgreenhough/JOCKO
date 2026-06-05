@@ -470,31 +470,36 @@ def _get_distance_trend():
         return 100.0
     return 0.0
 
-def _body_battery_line():
-    bb = database.get_latest_body_battery()
-    if bb is None:
-        return None
-    if bb >= 70:
-        return f"Body battery: {bb}% — plenty in the tank."
-    elif bb >= 40:
-        return f"Body battery: {bb}% — moderate reserves, manageable."
-    else:
-        return f"Body battery: {bb}% — running low, recovery may be needed."
-
-def _fatigue_line():
-    score, factors = _calculate_fatigue_score()
+def _recovery_status_line():
+    """
+    Combined recovery status using both fatigue score and body battery.
+    Returns a single unified line about recovery state.
+    """
+    fatigue_score, factors = _calculate_fatigue_score()
     bb = database.get_latest_body_battery()
     
-    if score >= 70:
-        return f"Fatigue: {score}/100 — HIGH. {', '.join(factors)}. Prioritize recovery."
-    elif score >= 40:
-        return f"Fatigue: {score}/100 — MODERATE. {', '.join(factors)}. Balance work and rest."
+    # Normalize body battery to 0-100 scale (inverted - low BB = high recovery need)
+    # 100% BB = 0 recovery need, 0% BB = 100 recovery need
+    bb_recovery_need = 100 - bb if bb is not None else 0
+    
+    # Combined score: 60% fatigue, 40% body battery
+    combined_score = int((fatigue_score * 0.6) + (bb_recovery_need * 0.4))
+    
+    # Build context from available data
+    context_parts = []
+    if factors:
+        context_parts.extend(factors)
+    if bb is not None:
+        context_parts.append(f"BB {bb}%")
+    
+    context = " | ".join(context_parts) if context_parts else "All metrics good"
+    
+    if combined_score >= 70:
+        return f"Recovery: {combined_score}/100 — HIGH PRIORITY. {context}. Rest and recover."
+    elif combined_score >= 40:
+        return f"Recovery: {combined_score}/100 — MODERATE. {context}. Balance training with recovery."
     else:
-        # Fatigue is low, but check body battery before saying "ready to push"
-        if bb is not None and bb < 40:
-            return f"Fatigue: {score}/100 — LOW. {', '.join(factors) if factors else 'Good recovery state.'} But body battery is low ({bb}%) — consider recovery first."
-        else:
-            return f"Fatigue: {score}/100 — LOW. {', '.join(factors) if factors else 'Good recovery state.'} Ready to push."
+        return f"Recovery: {combined_score}/100 — GOOD. {context}. Ready to push."
 
 def _trend_line():
     distance_trend = _get_distance_trend()
@@ -526,11 +531,10 @@ def generate_weekly_report():
     previous  = _calculate_summary(last_week)
     intensity = int(database.get_setting("intensity") or 5)
 
-    session_trend = current["session_count"] - previous["session_count"]
+    session_trend = current["activity_count"] - previous["activity_count"]
     trend_str     = f"+{session_trend}" if session_trend >= 0 else str(session_trend)
     compliance    = goals.compliance(current)
-    bb_line       = _body_battery_line()
-    fatigue_line  = _fatigue_line()
+    recovery_line = _recovery_status_line()
     trend_line    = _trend_line()
 
     # Check if in grace period
@@ -548,15 +552,13 @@ def generate_weekly_report():
     prompt = _base_persona_prompt(intensity) + f"""
 Deliver a weekly training report based on this data. Be extremely concise. No bullet points. Speak directly to the athlete.
 MAXIMUM 3-4 SENTENCES. Be punchy and direct.
-Use the fatigue score and trends to guide your coaching — push harder when fatigue is low and recovery is good,
-back off when fatigue is high. Factor in body battery and HR trends in your assessment.
+Use the recovery score and trends to guide your coaching — push harder when recovery is good, back off when recovery is needed.
 {grace_note}
 
 {compliance}
 Sessions vs last week: {trend_str}
 {trend_line}
-{fatigue_line}
-{f"{bb_line}" if bb_line else ""}
+{recovery_line}
 Total time: {current['total_time']} min"""
 
     response = client.chat.completions.create(
@@ -570,9 +572,8 @@ def get_status():
     this_week  = _get_week_start(0)
     current    = _calculate_summary(this_week)
     compliance = goals.compliance(current)
-    bb_line    = _body_battery_line()
-    fatigue_line = _fatigue_line()
     trend_line = _trend_line()
+    recovery_line = _recovery_status_line()
 
     # Check activation status
     is_active = database.get_setting("jocko_active") == "1"
@@ -602,10 +603,8 @@ def get_status():
 
     # Get version info
     version_str = version.get_version_string()
-
-    status = f"Week starting {this_week}\n{compliance}\n{trend_line}\n{fatigue_line}"
-    if bb_line:
-        status += f"\n{bb_line}"
+    
+    status = f"Week starting {this_week}\n{compliance}\n{trend_line}\n{recovery_line}"
     status += status_extra
     status += f"\n\n📦 Version: {version_str}"
     return status
@@ -621,8 +620,7 @@ def chat(user_message):
     current    = _calculate_summary(this_week)
     intensity  = int(database.get_setting("intensity") or 5)
     compliance = goals.compliance(current)
-    bb_line    = _body_battery_line()
-    fatigue_line = _fatigue_line()
+    recovery_line = _recovery_status_line()
     trend_line = _trend_line()
 
     # Get today's Daily Stoic entry
@@ -690,15 +688,14 @@ RULES:
 - Count your sentences: First sentence. Second sentence. Done.
 - If you write more than 2 sentences, you have failed.
 
-Use body battery and fatigue score as coaching colour — if fatigue is high or body battery is low, factor in recovery;
-if both are good, push harder. Use trends to assess whether the athlete is improving or regressing.
+Use recovery score as coaching colour — if recovery is needed, factor that in; if recovery is good, push harder.
+Use trends to assess whether the athlete is improving or regressing.
 {"This is a GRACE PERIOD week - penalties are not yet active. Use this as onboarding time to establish the routine, but still push for discipline." if in_grace_period else ""}
 
 Current training context:
 {compliance}
 {trend_line}
-{fatigue_line}
-{f"{bb_line}" if bb_line else ""}
+{recovery_line}
 Total time this week: {current['total_time']} min
 {commitment_context}
 
