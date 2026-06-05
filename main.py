@@ -110,7 +110,11 @@ async def cmd_commands(update: Update, context: ContextTypes.DEFAULT_TYPE):
 /commands - Show this command list
 
 **Goal Setting:**
-/goal [key] [value] - Set goals (e.g., /goal workouts_per_week 5)
+/goal [key] [value] - Set weekly targets
+  • Examples: `/goal act 6`, `/goal workouts 4`, `/goal cardio 4`, `/goal sprints 2`
+  • Available: activities/a/act, workouts/wo/w, cardio/c, sprints/sp/s, steps, calories/cals, distance/dist
+
+**Interaction:**
 /intensity [1-10] - Set coaching intensity (1=gentle, 10=brutal)
 /frequency [1-10] - Set check-in frequency (1=minimal, 10=constant)
 

@@ -258,6 +258,7 @@ None currently.
 5. `[x]` Jocko still rambling despite the cap on number of sentences — Response length control not working
 6. `[x]` /activate command produces no response — Command handler not functioning? should notify of penalty start date
 
+
 ---
 
 ## Phase 9 — Timezone Handling
@@ -327,8 +328,65 @@ Use this section to record what was done each session so you can pick up exactly
 
 4. **Display:** Convert UTC → local timezone only when generating messages
 
+
 **Dependencies:**
 ```
 # zoneinfo is built into Python 3.9+, no external dependency needed
 # For Python < 3.9: backports.zoneinfo
 ```
+
+---
+
+## Phase 10 — Advanced Goal System Upgrade
+
+Goal: Properly separate and track different activity types with distinct goals.
+
+**Background:**
+- Current system counts "workouts" as any activity and "sprints" as activities with "sprint" in the type
+- This creates loopholes: 2 sprints = 2 workouts + 2 sprints, allowing someone to meet sprint goal with only 2 total activities
+- Need distinct counters: total activities, work activities, cardio activities, sprint activities
+
+**New Goal Structure:**
+
+| Goal | Description | Counts Toward |
+|------|-------------|---------------|
+| `activities_per_week` | Total number of training sessions | Any logged activity |
+| `workouts_per_week` | Strength/resistance training sessions | Strength Training, Weightlifting, CrossFit, etc. |
+| `cardio_per_week` | Cardiovascular workouts | Running, Cycling, Swimming, Elliptical, Rowing, etc. |
+| `sprints_per_week` | High-intensity sprint sessions | Activities with "sprint" in type name |
+
+**Activity Classification Rules:**
+
+| Garmin Activity Type | Classification |
+|---------------------|----------------|
+| Running, Treadmill Running | cardio |
+| Cycling, Indoor Cycling | cardio |
+| Swimming, Pool Swimming, Open Water | cardio |
+| Elliptical, Rowing, Stair Climbing | cardio |
+| Strength Training, Weightlifting, CrossFit | workout |
+| Yoga, Pilates, Stretching | activity only (not cardio, not workout) |
+| Sprint Running, REHIT, intervals | sprint + cardio |
+| *Any "sprint" in name* | sprint (+ cardio if cardio type) |
+
+**Files to Modify:**
+- `goals.py` — Add new goal keys to `ALL_GOALS`, update `DEFAULTS`
+- `coach.py` — Rewrite `_calculate_summary()` to classify activities properly
+- `database.py` — Add new columns to goals table
+- `main.py` — Update `/commands` help text
+
+| Status | Task | File | Notes |
+|---|---|---|---|
+| `[x]` | Add new goal keys to goals.py | `goals.py` | activities_per_week, workouts_per_week, cardio_per_week |
+| `[x]` | Update database schema | `database.py` | Add columns to goals table |
+| `[x]` | Create activity classifier function | `coach.py` | Map Garmin activity types → categories |
+| `[x]` | Rewrite _calculate_summary() | `coach.py` | Count activities, workouts, cardio, sprints separately |
+| `[x]` | Update compliance checking | `goals.py` | Handle new goal types in compliance() |
+| `[x]` | Update /commands help text | `main.py` | Document new goal types and shortcuts |
+| `[x]` | Add fuzzy matching for new goals | `goals.py` | a, act, w, wo, cardio, c |
+| `[x]` | Test classification logic | `test_phase10.py` | Created test file for verification |
+
+**Phase 10 Status:** Implementation complete — pending deployment testing
+
+---
+
+# Payment Test

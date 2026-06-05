@@ -31,7 +31,9 @@ def init_db():
     c.execute("""
         CREATE TABLE IF NOT EXISTS goals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activities_per_week INTEGER DEFAULT 6,
             workouts_per_week INTEGER DEFAULT 4,
+            cardio_per_week INTEGER DEFAULT 4,
             sprints_per_week INTEGER DEFAULT 2,
             steps_per_day INTEGER,
             calories_per_week INTEGER,
@@ -153,19 +155,23 @@ def set_setting(key, value):
 def get_goals():
     conn = get_connection()
     c = conn.cursor()
-    c.execute("SELECT workouts_per_week, sprints_per_week, steps_per_day, calories_per_week, distance_per_week FROM goals ORDER BY id DESC LIMIT 1")
+    c.execute("SELECT activities_per_week, workouts_per_week, cardio_per_week, sprints_per_week, steps_per_day, calories_per_week, distance_per_week FROM goals ORDER BY id DESC LIMIT 1")
     row = c.fetchone()
     conn.close()
     if row:
         return {
-            "workouts_per_week": row[0],
-            "sprints_per_week": row[1],
-            "steps_per_day": row[2],
-            "calories_per_week": row[3],
-            "distance_per_week": row[4],
+            "activities_per_week": row[0],
+            "workouts_per_week": row[1],
+            "cardio_per_week": row[2],
+            "sprints_per_week": row[3],
+            "steps_per_day": row[4],
+            "calories_per_week": row[5],
+            "distance_per_week": row[6],
         }
     return {
+        "activities_per_week": 6,
         "workouts_per_week": 4,
+        "cardio_per_week": 4,
         "sprints_per_week": 2,
         "steps_per_day": None,
         "calories_per_week": None,
@@ -180,10 +186,12 @@ def set_goal(key, value):
     current[key] = value
     c.execute("""
         INSERT INTO goals
-        (workouts_per_week, sprints_per_week, steps_per_day, calories_per_week, distance_per_week, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        (activities_per_week, workouts_per_week, cardio_per_week, sprints_per_week, steps_per_day, calories_per_week, distance_per_week, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
+        current["activities_per_week"],
         current["workouts_per_week"],
+        current["cardio_per_week"],
         current["sprints_per_week"],
         current["steps_per_day"],
         current["calories_per_week"],

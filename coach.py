@@ -256,31 +256,95 @@ def _get_week_start_local(offset=0):
     monday = today - timedelta(days=today.weekday()) - timedelta(weeks=offset)
     return monday.strftime('%Y-%m-%d')
 
+# Activity type classifications
+CARDIO_TYPES = {
+    'running', 'treadmill running', 'trail running', 'track running',
+    'cycling', 'indoor cycling', 'mountain biking', 'e-bike',
+    'swimming', 'pool swimming', 'open water swimming',
+    'elliptical', 'rowing', 'indoor rowing', 'stair climbing',
+    'hiit', 'interval training'
+}
+
+WORKOUT_TYPES = {
+    'strength training', 'weightlifting', 'crossfit', 'functional strength training',
+    'circuit training', 'boot camp', 'powerlifting', 'bodyweight training'
+}
+
+SPRINT_TYPES = {
+    'sprint running', 'sprint triathlon', 'track sprints', 'pool sprints',
+    'rehit', 'high intensity interval training', 'hiit sprints'
+}
+
+def classify_activity(activity_type):
+    """
+    Classify an activity into categories.
+    Returns dict with: is_cardio, is_workout, is_sprint
+    """
+    if not activity_type:
+        return {"is_cardio": False, "is_workout": False, "is_sprint": False}
+    
+    activity_lower = activity_type.lower()
+    
+    # Check for sprint (highest priority - by keyword or explicit type)
+    is_sprint = (
+        "sprint" in activity_lower or 
+        "rehit" in activity_lower or 
+        "hiit" in activity_lower or
+        any(sprint in activity_lower for sprint in SPRINT_TYPES)
+    )
+    
+    # Check for cardio
+    is_cardio = any(cardio in activity_lower for cardio in CARDIO_TYPES)
+    
+    # Check for workout (strength/resistance)
+    is_workout = any(workout in activity_lower for workout in WORKOUT_TYPES)
+    
+    return {
+        "is_cardio": is_cardio,
+        "is_workout": is_workout,
+        "is_sprint": is_sprint
+    }
+
+
 def _calculate_summary(week_start_str):
     activities = database.get_activities_since(week_start_str)
     total_distance = 0.0
     total_time     = 0.0
     total_calories = 0.0
     hr_readings    = []
-    session_count  = 0
-    sprint_count   = 0
+    
+    # New counters for Phase 10
+    activity_count = 0  # Total activities
+    workout_count  = 0  # Strength/resistance
+    cardio_count   = 0  # Cardiovascular
+    sprint_count   = 0  # Sprint/HIIT
 
     for row in activities:
         # id(0), name(1), type(2), start_time(3), duration(4), distance(5), calories(6), avg_hr(7), max_hr(8), body_battery_start(9), body_battery_end(10)
         _, name, activity_type, start_time, duration, distance, calories, avg_hr, _, _, _ = row
         if start_time >= week_start_str:
-            session_count  += 1
+            activity_count += 1
             total_distance += distance or 0
             total_time     += duration or 0
             total_calories += calories or 0
             if avg_hr:
                 hr_readings.append(avg_hr)
-            if activity_type and "sprint" in activity_type.lower():
+            
+            # Classify the activity
+            classification = classify_activity(activity_type)
+            
+            if classification["is_sprint"]:
                 sprint_count += 1
+            if classification["is_cardio"]:
+                cardio_count += 1
+            if classification["is_workout"]:
+                workout_count += 1
 
     avg_hr = round(sum(hr_readings) / len(hr_readings), 1) if hr_readings else None
     return {
-        "session_count":  session_count,
+        "activity_count": activity_count,
+        "workout_count":  workout_count,
+        "cardio_count":   cardio_count,
         "sprint_count":   sprint_count,
         "total_distance": round(total_distance, 2),
         "total_time":     round(total_time, 1),
@@ -419,12 +483,18 @@ def _body_battery_line():
 
 def _fatigue_line():
     score, factors = _calculate_fatigue_score()
+    bb = database.get_latest_body_battery()
+    
     if score >= 70:
         return f"Fatigue: {score}/100 — HIGH. {', '.join(factors)}. Prioritize recovery."
     elif score >= 40:
         return f"Fatigue: {score}/100 — MODERATE. {', '.join(factors)}. Balance work and rest."
     else:
-        return f"Fatigue: {score}/100 — LOW. {', '.join(factors) if factors else 'Good recovery state.'} Ready to push."
+        # Fatigue is low, but check body battery before saying "ready to push"
+        if bb is not None and bb < 40:
+            return f"Fatigue: {score}/100 — LOW. {', '.join(factors) if factors else 'Good recovery state.'} But body battery is low ({bb}%) — consider recovery first."
+        else:
+            return f"Fatigue: {score}/100 — LOW. {', '.join(factors) if factors else 'Good recovery state.'} Ready to push."
 
 def _trend_line():
     distance_trend = _get_distance_trend()

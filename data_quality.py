@@ -3,33 +3,27 @@ from datetime import datetime
 from typing import List, Dict, Tuple
 from config import DB_PATH
 import timezone
+from coach import classify_activity
 
 # Flag types
 FLAG_LOW_HEART_RATE = "low_avg_hr"
-FLAG_HIGH_HEART_RATE = "high_avg_hr"
 FLAG_FLATLINE_HEART_RATE = "flatline_hr"
 FLAG_SHORT_DURATION = "short_duration"
-FLAG_LONG_DURATION = "long_duration"
 
-# Thresholds (customizable per activity type)
+# Thresholds (based on classified activity types: cardio, workout, sprint)
+# Only minimum thresholds - no max HR or max duration
 THRESHOLDS = {
-    "running": {
+    "cardio": {
         "min_avg_hr": 100,
-        "max_avg_hr": 190,
-        "min_duration": 600,  # 10 minutes
-        "max_duration": 14400  # 4 hours
+        "min_duration": 900  # 15 minutes
     },
-    "cycling": {
-        "min_avg_hr": 80,
-        "max_avg_hr": 180,
-        "min_duration": 600,
-        "max_duration": 18000
-    },
-    "strength_training": {
+    "workout": {
         "min_avg_hr": 85,
-        "max_avg_hr": 170,
-        "min_duration": 1500,
-        "max_duration": 7200
+        "min_duration": 1500  # 25 minutes
+    },
+    "sprint": {
+        "min_avg_hr": 120,
+        "min_duration": 600   # 10 minutes
     }
 }
 
@@ -44,22 +38,35 @@ def analyze_activity(activity: Dict) -> List[Tuple[str, str]]:
         List of (flag_type, description) tuples
     """
     flags = []
-    activity_type = activity.get("activityType", {}).get("typeKey", "unknown")
-    thresholds = THRESHOLDS.get(activity_type, {})
+    
+    # Get raw activity type and classify it
+    raw_activity_type = activity.get("activityType", {}).get("typeKey", "unknown")
+    classification = classify_activity(raw_activity_type)
+    
+    # Determine which category this activity falls into for threshold lookup
+    # Priority: sprint > workout > cardio (sprint is most specific)
+    if classification["is_sprint"]:
+        activity_category = "sprint"
+    elif classification["is_workout"]:
+        activity_category = "workout"
+    elif classification["is_cardio"]:
+        activity_category = "cardio"
+    else:
+        # Activity doesn't match any category we have thresholds for
+        return flags
+    
+    thresholds = THRESHOLDS.get(activity_category, {})
     
     # Skip analysis if no thresholds defined for activity type
     if not thresholds:
         return flags
     
-    # Heart rate analysis
+    # Heart rate analysis - only check for LOW heart rate (no max)
     avg_hr = activity.get("averageHeartRate", 0)
-    max_hr = activity.get("maxHeartRate", 0)
     
     if avg_hr > 0:
         if avg_hr < thresholds.get("min_avg_hr", 0):
-            flags.append((FLAG_LOW_HEART_RATE, f"Average heart rate ({avg_hr} bpm) unusually low for {activity_type}"))
-        elif avg_hr > thresholds.get("max_avg_hr", 999):
-            flags.append((FLAG_HIGH_HEART_RATE, f"Average heart rate ({avg_hr} bpm) unusually high for {activity_type}"))
+            flags.append((FLAG_LOW_HEART_RATE, f"Average heart rate ({avg_hr} bpm) unusually low for {activity_category}"))
             
     # Check for flatline heart rate (same value for 3+ consecutive minutes)
     heart_rate_samples = activity.get("heartRateSamples", [])
@@ -71,15 +78,13 @@ def analyze_activity(activity: Dict) -> List[Tuple[str, str]]:
                 flatline_detected = True
                 break
         if flatline_detected:
-            flags.append((FLAG_FLATLINE_HEART_RATE, f"Heart rate appears flatlined during {activity_type}"))
+            flags.append((FLAG_FLATLINE_HEART_RATE, f"Heart rate appears flatlined during {activity_category}"))
     
-    # Duration analysis
+    # Duration analysis - only check for SHORT duration (no max)
     duration = activity.get("duration", 0)
     if duration > 0:
         if duration < thresholds.get("min_duration", 0):
-            flags.append((FLAG_SHORT_DURATION, f"Duration ({duration}s) unusually short for {activity_type}"))
-        elif duration > thresholds.get("max_duration", 999999):
-            flags.append((FLAG_LONG_DURATION, f"Duration ({duration}s) unusually long for {activity_type}"))
+            flags.append((FLAG_SHORT_DURATION, f"Duration ({duration}s) unusually short for {activity_category}"))
     
     return flags
 
