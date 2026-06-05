@@ -8,6 +8,32 @@ def get_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def _migrate_goals_table(c):
+    """Migrate goals table to add missing columns if they don't exist."""
+    # Get existing columns
+    c.execute("PRAGMA table_info(goals)")
+    existing_columns = [row[1] for row in c.fetchall()]
+    
+    # Add missing columns
+    columns_to_add = {
+        'activities_per_week': 'INTEGER DEFAULT 6',
+        'workouts_per_week': 'INTEGER DEFAULT 4',
+        'cardio_per_week': 'INTEGER DEFAULT 4',
+        'sprints_per_week': 'INTEGER DEFAULT 2',
+        'steps_per_day': 'INTEGER',
+        'calories_per_week': 'INTEGER',
+        'distance_per_week': 'REAL',
+        'updated_at': 'TEXT'
+    }
+    
+    for column, col_type in columns_to_add.items():
+        if column not in existing_columns:
+            try:
+                c.execute(f"ALTER TABLE goals ADD COLUMN {column} {col_type}")
+                print(f"[database] Added missing column: {column}")
+            except sqlite3.OperationalError as e:
+                print(f"[database] Note: Could not add column {column}: {e}")
+
 def init_db():
     conn = get_connection()
     c = conn.cursor()
@@ -41,6 +67,9 @@ def init_db():
             updated_at TEXT
         )
     """)
+    
+    # Migrate existing goals table to add any missing columns
+    _migrate_goals_table(c)
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS penalty_log (
