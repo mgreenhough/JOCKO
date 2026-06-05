@@ -472,34 +472,20 @@ def _get_distance_trend():
 
 def _recovery_status_line():
     """
-    Combined recovery status using both fatigue score and body battery.
-    Returns a single unified line about recovery state.
+    Recovery status using Garmin's body battery directly.
     """
-    fatigue_score, factors = _calculate_fatigue_score()
     bb = database.get_latest_body_battery()
     
-    # Normalize body battery to 0-100 scale (inverted - low BB = high recovery need)
-    # 100% BB = 0 recovery need, 0% BB = 100 recovery need
-    bb_recovery_need = 100 - bb if bb is not None else 0
-    
-    # Combined score: 60% fatigue, 40% body battery
-    combined_score = int((fatigue_score * 0.6) + (bb_recovery_need * 0.4))
-    
-    # Build context from available data
-    context_parts = []
-    if factors:
-        context_parts.extend(factors)
-    if bb is not None:
-        context_parts.append(f"BB {bb}%")
-    
-    context = " | ".join(context_parts) if context_parts else "All metrics good"
-    
-    if combined_score >= 70:
-        return f"Recovery: {combined_score}/100 — HIGH PRIORITY. {context}. Rest and recover."
-    elif combined_score >= 40:
-        return f"Recovery: {combined_score}/100 — MODERATE. {context}. Balance training with recovery."
+    if bb is None:
+        return "Recovery: No body battery data available."
+    elif bb >= 75:
+        return f"Body Battery: {bb}% — EXCELLENT. Fully charged and ready to dominate."
+    elif bb >= 50:
+        return f"Body Battery: {bb}% — GOOD. Adequate reserves for hard training."
+    elif bb >= 30:
+        return f"Body Battery: {bb}% — MODERATE. Balance work with recovery."
     else:
-        return f"Recovery: {combined_score}/100 — GOOD. {context}. Ready to push."
+        return f"Body Battery: {bb}% — LOW. Prioritize rest and recovery."
 
 def _trend_line():
     distance_trend = _get_distance_trend()
